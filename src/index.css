@@ -1,1 +1,103 @@
 @import "tailwindcss";
+
+/* ArcRx design tokens — a clinical instrument panel: deep ink, paper text,
+   amber for live measurement, teal for targets, coral for compensation. */
+@theme {
+  --color-ink-950: #0a1020;
+  --color-ink-900: #10192d;
+  --color-ink-800: #18233b;
+  --color-ink-700: #243150;
+  --color-ink-600: #334467;
+  --color-paper: #eef2ff;
+  --color-mute: #8a96b3;
+  --color-amber: #f5b942;
+  --color-teal: #4fd1c5;
+  --color-coral: #f0636b;
+  --color-violet: #a78bfa;
+  --font-sans: "Bahnschrift", "DIN Alternate", "Franklin Gothic Medium", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "Consolas", ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink-950);
+  color: var(--color-paper);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+.numeral {
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.02em;
+}
+
+.panel {
+  background: var(--color-ink-900);
+  border: 1px solid var(--color-ink-700);
+  border-radius: 10px;
+}
+
+.btn {
+  @apply inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors;
+  border: 1px solid var(--color-ink-600);
+  background: var(--color-ink-800);
+  color: var(--color-paper);
+}
+.btn:hover { background: var(--color-ink-700); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary { background: var(--color-amber); border-color: var(--color-amber); color: #1a1200; }
+.btn-primary:hover { background: #ffcb5c; }
+.btn-teal { background: var(--color-teal); border-color: var(--color-teal); color: #04221f; }
+.btn-teal:hover { background: #6fe3d8; }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--color-mute); }
+.btn-ghost:hover { color: var(--color-paper); background: var(--color-ink-800); }
+
+.field {
+  @apply rounded-md px-2.5 py-1.5 text-sm;
+  background: var(--color-ink-950);
+  border: 1px solid var(--color-ink-600);
+  color: var(--color-paper);
+}
+.field:focus { outline: 2px solid var(--color-amber); outline-offset: 1px; }
+
+:focus-visible { outline: 2px solid var(--color-amber); outline-offset: 2px; }
+
+.video-mirror { transform: scaleX(-1); }
+
+.scanline {
+  background-image: linear-gradient(to bottom, rgba(238,242,255,0.025) 1px, transparent 1px);
+  background-size: 100% 6px;
+}
+
+.sim-backdrop {
+  background:
+    radial-gradient(60% 80% at 50% 40%, rgba(79,209,197,0.10), transparent 70%),
+    linear-gradient(rgba(238,242,255,0.05) 1px, transparent 1px) 0 0 / 100% 48px,
+    linear-gradient(90deg, rgba(238,242,255,0.05) 1px, transparent 1px) 0 0 / 48px 100%,
+    var(--color-ink-950);
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(245,185,66,0.5); }
+  100% { box-shadow: 0 0 0 10px rgba(245,185,66,0); }
+}
+.live-dot { animation: pulse-ring 1.6s ease-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+  * { transition-duration: 0.01ms !important; }
+}
+
+table.data { border-collapse: collapse; width: 100%; }
+table.data th { text-align: left; font-weight: 500; color: var(--color-mute); padding: 6px 10px; border-bottom: 1px solid var(--color-ink-700); font-size: 12px; }
+table.data td { padding: 8px 10px; border-bottom: 1px solid var(--color-ink-800); font-size: 14px; }
+table.data tr:last-child td { border-bottom: none; }

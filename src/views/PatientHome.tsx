@@ -1,0 +1,54 @@
+import { useEffect, useState } from 'react';
+import { api, type PatientDetail, type PatientSummary } from '../lib/api';
+import { EXERCISE_SPECS, type ExerciseKey } from '../cv/types';
+import { fmtDate, MiniLine, Section, Spinner, Stat } from '../components/ui';
+import SessionView from './SessionView';
+
+export default function PatientHome({ patients, refresh }: { patients: PatientSummary[]; refresh: () => void }) {
+  const [patientId, setPatientId] = useState<number>(patients[0]?.id);
+  const [detail, setDetail] = useState<PatientDetail | null>(null);
+  const patient = patients.find((p) => p.id === patientId) || patients[0];
+
+  useEffect(() => {
+    if (!patient) return;
+    let alive = true;
+    api.patient(patient.id).then((d) => alive && setDetail(d)).catch(() => {});
+    return () => { alive = false; };
+  }, [patient?.id, patients]);
+
+  if (!patient) return <Spinner label="Loading your plan" />;
+  const m = patient.assessment.metrics;
+  const spec = patient.plan ? EXERCISE_SPECS[patient.plan.exercise_key as ExerciseKey] : null;
+  const history = (detail?.sessions || []).slice().reverse().slice(-20).map((s) => ({ label: fmtDate(s.started_at), value: s.peak_rom }));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold">Today's exercise</h2>
+          <p className="text-sm text-mute">{patient.condition}{spec ? ` · ${spec.label}, ${patient.plan?.side}` : ''}</p>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-mute">
+          Signed in as
+          <select className="field" value={patient.id} onChange={(e) => setPatientId(Number(e.target.value))}>
+            {patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+      </div>
+
+      <SessionView patient={patient} onSaved={refresh} />
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <Stat label="Best this week" value={m.latestPeak.toFixed(0)} unit={`° of ${m.target}°`} tone="amber" />
+        <Stat label="Sessions this week" value={`${m.sessionsLast7} / ${m.prescribedPerWeek}`} tone="teal" />
+        <Stat label="Clean reps" value={`${Math.max(0, 100 - m.compensationPct).toFixed(0)}%`} tone={m.compensationPct >= 40 ? 'coral' : 'teal'} />
+        <Stat label="Trend" value={`${m.slopePerSession >= 0 ? '+' : ''}${m.slopePerSession.toFixed(1)}`} unit="° / session" tone={m.slopePerSession < 0 ? 'coral' : undefined} />
+      </div>
+
+      <Section title="Your range of motion over time">
+        {history.length ? <MiniLine data={history} height={180} /> : <Spinner label="Loading history" />}
+        <p className="mt-2 text-xs text-mute">Each point is the best rep of a session. Target: {m.target}°.</p>
+      </Section>
+    </div>
+  );
+}
