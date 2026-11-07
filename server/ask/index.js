@@ -9,7 +9,7 @@
 //      questions from the same tables, so the feature works fully offline.
 // Patients always take path 2 scoped to their own record.
 import { askObject, guardReadOnlySql } from '../../lib/ai.js';
-import { assessProgress, EXERCISES, STATUS_LABELS, resolvePatientScope } from '../../lib/rehab.js';
+import { assessProgress, EXERCISES, STATUS_LABELS, resolvePatientScope, scopeClause } from '../../lib/rehab.js';
 
 const SCHEMA_DOC = `
 Tables (Postgres):
@@ -174,7 +174,8 @@ async function answerWithRules({ query, question, scope }) {
     };
   }
   if (/alert/.test(q)) {
-    const alerts = await query(`SELECT a.severity, a.kind, a.title, p.name FROM alerts a JOIN patients p ON p.id = a.patient_id WHERE a.status = 'open' ORDER BY a.created_at DESC LIMIT 20`);
+    const params = [];
+    const alerts = await query(`SELECT a.severity, a.kind, a.title, p.name FROM alerts a JOIN patients p ON p.id = a.patient_id WHERE a.status = 'open'${scopeClause(scope, 'a', params)} ORDER BY a.created_at DESC LIMIT 20`, params);
     return {
       ...base,
       answer: alerts.length ? `${alerts.length} open alert${alerts.length > 1 ? 's' : ''}: ${alerts.slice(0, 4).map((a) => `${a.name} — ${a.title} (${a.severity})`).join('; ')}.` : 'No open alerts.',

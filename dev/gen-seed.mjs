@@ -23,8 +23,8 @@ const iso = (t) => t.toISOString();
 const EXERCISE_FLAGS = {
   shoulder_abduction: ['trunk_lean', 'shoulder_hike'],
   elbow_flexion: ['shoulder_drift', 'trunk_lean'],
-  neck_rotation: ['shoulder_turn', 'head_tilt'],
-  neck_lateral_flexion: ['shoulder_hike', 'head_rotation'],
+  neck_rotation: ['head_tilt', 'chin_drop'],
+  neck_lateral_flexion: ['head_rotation', 'chin_drop'],
 };
 
 const patients = [

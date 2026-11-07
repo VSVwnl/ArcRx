@@ -57,7 +57,7 @@ fallback:
         severity: high
         kind: compensation
         title: "Compensation on {assessment.metrics.compensationPct}% of reps"
-        body: "The movement pattern is being substituted (trunk lean / shoulder hike) on most reps. Suggested: re-cue the pattern and reduce range until compensation clears."
+        body: "The movement pattern is being substituted (trunk lean, shoulder hike, head tilt) on most reps. Suggested: re-cue the pattern and reduce range until compensation clears."
 
     - tool: create_alert
       when: { path: assessment.status, in: [plateau] }

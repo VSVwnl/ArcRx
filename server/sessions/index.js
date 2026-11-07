@@ -1,6 +1,6 @@
 // POST /api/_server/sessions — persist a scored webcam session and emit session.completed.
 // GET  /api/_server/sessions?patient_id=…&limit=… — recent sessions.
-import { assessProgress, resolvePatientScope, scopeClause } from '../../lib/rehab.js';
+import { EXERCISES, assessProgress, resolvePatientScope, scopeClause } from '../../lib/rehab.js';
 
 export async function GET({ query, request, platform }) {
   const scope = await resolvePatientScope({ query, request, platform });
@@ -20,7 +20,16 @@ export async function POST({ query, request, platform, emit, transaction, log })
   const scope = await resolvePatientScope({ query, request, platform });
   const patientId = Number(b.patient_id);
   if (!scope.all && scope.patientId !== patientId) return { status: 403, body: { message: 'Not your record' } };
-  if (!Array.isArray(b.reps) || b.reps.length === 0) return { status: 400, body: { message: 'A session needs at least one rep' } };
+  if (!Array.isArray(b.reps) || b.reps.length === 0 || b.reps.length > 200) return { status: 400, body: { message: 'A session needs 1-200 reps' } };
+  if (!EXERCISES[b.exercise_key]) return { status: 400, body: { message: 'Unknown exercise_key' } };
+  if (b.side && !['left', 'right'].includes(b.side)) return { status: 400, body: { message: 'side must be left or right' } };
+  if (b.source && !['webcam', 'simulation'].includes(b.source)) return { status: 400, body: { message: 'source must be webcam or simulation' } };
+  const pain = Math.max(0, Math.min(10, Math.round(Number(b.pain_score || 0))));
+  const allowedFlags = new Set(EXERCISES[b.exercise_key].compensations);
+  for (const r of b.reps) {
+    if (!Number.isFinite(Number(r.peak_angle)) || Number(r.peak_angle) < 0 || Number(r.peak_angle) > 180) return { status: 400, body: { message: 'peak_angle must be 0-180' } };
+    r.compensation_flags = (Array.isArray(r.compensation_flags) ? r.compensation_flags : []).filter((f) => allowedFlags.has(f));
+  }
 
   const [plan] = await query('SELECT * FROM exercise_plans WHERE patient_id = $1 AND active = TRUE ORDER BY id DESC LIMIT 1', [patientId]);
   const peaks = b.reps.map((r) => Number(r.peak_angle));
@@ -35,7 +44,7 @@ export async function POST({ query, request, platform, emit, transaction, log })
       `INSERT INTO sessions (patient_id, plan_id, exercise_key, side, started_at, ended_at, reps, peak_rom, mean_rom, smoothness, compensation_pct, pain_score, source)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [patientId, plan?.id ?? null, b.exercise_key, b.side || plan?.side || 'right', b.started_at, b.ended_at || new Date().toISOString(),
-        b.reps.length, peak.toFixed(1), meanRom.toFixed(1), smooth.toFixed(1), compPct.toFixed(1), Number(b.pain_score || 0), b.source || 'webcam'],
+        b.reps.length, peak.toFixed(1), meanRom.toFixed(1), smooth.toFixed(1), compPct.toFixed(1), pain, b.source || 'webcam'],
     );
     for (const [i, r] of b.reps.entries()) {
       await q(

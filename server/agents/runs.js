@@ -1,6 +1,9 @@
 // GET  /api/_server/agents/runs — recent agent runs for the in-app agent console.
 // POST /api/_server/agents/runs — record a run (the dev mirror posts here after a trigger;
 //                                 in production Informer keeps its own run log too).
+// Agent runs can contain patient telemetry, so only clinicians/admins may read or record them.
+export const config = { roles: ['clinician', 'admin'] };
+
 export async function GET({ query, request }) {
   const limit = Math.min(Number(request.query.limit || 20), 100);
   return query('SELECT * FROM agent_runs ORDER BY created_at DESC LIMIT $1', [limit]);
