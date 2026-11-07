@@ -37,7 +37,7 @@ export async function handler({ args, query }) {
       reasons: a.reasons,
     };
   });
-  const counts = {};
+  const counts = { on_track: 0, ready_to_progress: 0, plateau: 0, regression: 0, non_adherent: 0, no_data: 0 };
   for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
   return { generated_at: new Date().toISOString(), counts, patients: rows };
 }

@@ -130,7 +130,7 @@ export default function SessionView({ patient, onSaved }: Props) {
               <div className="text-3xl font-semibold" style={{ color: activeFlags.length ? '#F0636B' : '#F5B942' }}>
                 {state.angle.toFixed(0)}<span className="text-base text-mute">°</span>
               </div>
-              <div className="text-[11px] text-mute">rep {state.reps.length + (state.phase !== 'rest' ? 1 : 0)} · peak {state.repPeak.toFixed(0)}°</div>
+              <div className="text-[11px] text-mute">{state.phase !== 'rest' ? `rep ${state.reps.length + 1} · peak ${state.repPeak.toFixed(0)}°` : state.reps.length ? `last rep ${state.reps[state.reps.length - 1].peak_angle.toFixed(0)}°` : 'ready'}</div>
             </div>
           </div>
         )}

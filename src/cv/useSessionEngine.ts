@@ -55,6 +55,7 @@ export function useSessionEngine(videoRef: RefObject<HTMLVideoElement | null>, c
   const calib = useRef<{ t0: number; drop: RunningMean; rest: RunningMean; yaw: RunningMean; pitch: RunningMean; roll: RunningMean } | null>(null);
   const frameTimes = useRef<number[]>([]);
   const lastVideoT = useRef(-1);
+  const simT0 = useRef(0);
 
   const patch = (p: Partial<EngineState>) => Object.assign(live.current, p);
 
@@ -83,7 +84,7 @@ export function useSessionEngine(videoRef: RefObject<HTMLVideoElement | null>, c
     const o = opts.current!;
     const spec = EXERCISE_SPECS[o.exercise];
     if (o.source === 'simulation') {
-      const f = simulate(sim.current!, t);
+      const f = simulate(sim.current!, t - simT0.current);
       if (f.pose) return measurePose(f.pose, o.exercise, o.side, poseBaseline.current, t);
       if (f.head) return measureFace(f.head.pose, f.head.center, f.head.size, f.head.oval, o.exercise, faceBaseline.current, t);
       return null;
@@ -217,6 +218,7 @@ export function useSessionEngine(videoRef: RefObject<HTMLVideoElement | null>, c
         landmarker.current = await loadLandmarker(spec.model, (s) => patch({ statusText: s }));
       } else {
         sim.current = defaultSim(o.exercise, o.side, o.targetRom);
+        simT0.current = performance.now() + 400; // a beat at rest before the first rep
       }
     } catch (err) {
       const message = (err as Error)?.name === 'NotAllowedError'
