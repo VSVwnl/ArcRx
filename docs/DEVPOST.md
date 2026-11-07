@@ -24,7 +24,7 @@ A webcam goniometer with a physical therapist's judgment in the loop: measures e
 
 ## Links
 
-- GitHub repository: https://github.com/VSVwnl/Triangle-AI-Hackathon
+- GitHub repository: https://github.com/VSVwnl/ArcRx
 - Demo video (≤ 3 min): [[YouTube / Loom URL — record from docs/DEMO_SCRIPT.md]]
 - Live demo: runs locally with `npm install && npm run dev` (no hosted instance needed; fully offline)
 
