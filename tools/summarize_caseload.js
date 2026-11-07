@@ -1,4 +1,5 @@
 // Agent tool: one row per patient with trajectory status and adherence, for the weekly digest.
+import { audited } from '../lib/audit.js';
 import { assessProgress, STATUS_LABELS } from '../lib/rehab.js';
 
 export const description = 'Summarise every patient on the caseload: trajectory status, latest peak ROM vs target, adherence % over the last 7 days, pain and compensation.';
@@ -8,7 +9,7 @@ export const schema = {
   properties: { clinician: { type: ['string', 'null'], description: 'Restrict to one clinician username' } },
 };
 
-export async function handler({ args, query }) {
+export const handler = audited('summarize_caseload', async function handler({ args, query }) {
   const params = [];
   const where = args.clinician ? (params.push(args.clinician), ' WHERE p.clinician = $1') : '';
   const patients = await query(
@@ -40,4 +41,4 @@ export async function handler({ args, query }) {
   const counts = { on_track: 0, ready_to_progress: 0, plateau: 0, regression: 0, non_adherent: 0, no_data: 0 };
   for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
   return { generated_at: new Date().toISOString(), counts, patients: rows };
-}
+});

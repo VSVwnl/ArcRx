@@ -1,4 +1,5 @@
 // Agent tool: progress or hold a prescription, with an audit trail.
+import { audited } from '../lib/audit.js';
 export const description = 'Adjust the patient\'s active exercise plan (target_rom in degrees, reps, sets, frequency_per_week). Keep changes modest (target +5..10°, reps +1..2). Always give a rationale.';
 
 export const schema = {
@@ -16,7 +17,7 @@ export const schema = {
 
 const EDITABLE = ['target_rom', 'reps', 'sets', 'frequency_per_week'];
 
-export async function handler({ args, query, emit, run }) {
+export const handler = audited('adjust_plan', async function handler({ args, query, emit, run }) {
   const [plan] = await query('SELECT * FROM exercise_plans WHERE patient_id = $1 AND active = TRUE ORDER BY id DESC LIMIT 1', [Number(args.patient_id)]);
   if (!plan) return { error: 'No active plan for this patient' };
   const sets = [];
@@ -43,4 +44,4 @@ export async function handler({ args, query, emit, run }) {
   ]);
   await emit('plan.adjusted', { patient_id: plan.patient_id, plan_id: plan.id, change });
   return { changed: true, plan_id: plan.id, change, plan: { ...after, target_rom: Number(after.target_rom) } };
-}
+});

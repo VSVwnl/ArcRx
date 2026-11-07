@@ -1,4 +1,5 @@
 // Agent tool: patient, active plan and recent sessions.
+import { audited } from '../lib/audit.js';
 export const description = 'Fetch a patient record, their active exercise plan and their exercise sessions from the last N days (default 30), newest first.';
 
 export const schema = {
@@ -10,7 +11,7 @@ export const schema = {
   required: ['patient_id'],
 };
 
-export async function handler({ args, query }) {
+export const handler = audited('get_patient_history', async function handler({ args, query }) {
   const days = Math.min(Math.max(Number(args.days || 30), 1), 365);
   const [patient] = await query('SELECT id, name, mrn, condition, surgery_date, clinician FROM patients WHERE id = $1', [Number(args.patient_id)]);
   if (!patient) return { error: `No patient with id ${args.patient_id}` };
@@ -27,4 +28,4 @@ export async function handler({ args, query }) {
     sessions: sessions.map((s) => ({ ...s, peak_rom: Number(s.peak_rom), mean_rom: Number(s.mean_rom), smoothness: Number(s.smoothness), compensation_pct: Number(s.compensation_pct) })),
     openAlerts,
   };
-}
+});

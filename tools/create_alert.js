@@ -1,4 +1,5 @@
 // Agent tool: raise a clinician alert and push-notify the treating clinician.
+import { audited } from '../lib/audit.js';
 export const description = 'Create a clinician alert for a patient. Use severity high for regression/pain/compensation, medium for plateau, low for adherence outreach. Title must be specific and observable.';
 
 export const schema = {
@@ -14,7 +15,7 @@ export const schema = {
   required: ['patient_id', 'severity', 'kind', 'title', 'body'],
 };
 
-export async function handler({ args, query, emit, notify, run, log }) {
+export const handler = audited('create_alert', async function handler({ args, query, emit, notify, run, log }) {
   const [patient] = await query('SELECT id, name, clinician FROM patients WHERE id = $1', [Number(args.patient_id)]);
   if (!patient) return { error: `No patient with id ${args.patient_id}` };
   // Do not stack duplicate open alerts of the same kind for the same patient.
@@ -31,4 +32,4 @@ export async function handler({ args, query, emit, notify, run, log }) {
     log.warn('notify failed', { message: err.message });
   }
   return { alert_id: alert.id, severity: alert.severity, title: alert.title };
-}
+});
