@@ -38,7 +38,22 @@ export async function POST({ query, request, platform, emit, transaction, fetch,
     r.compensation_flags = (Array.isArray(r.compensation_flags) ? r.compensation_flags : []).filter((f) => allowedFlags.has(f));
   }
 
+  // Idempotency: one client_ref per session from the page. A retry with the same
+  // ref (e.g. after a lost response) returns the stored session, not a new row.
+  const clientRef = b.client_ref == null || b.client_ref === '' ? null : String(b.client_ref);
+  if (clientRef !== null && !/^[A-Za-z0-9_-]{8,64}$/.test(clientRef)) return { status: 400, body: { message: 'client_ref must be 8-64 letters, digits, - or _' } };
   const [plan] = await query('SELECT * FROM exercise_plans WHERE patient_id = $1 AND active = TRUE ORDER BY id DESC LIMIT 1', [patientId]);
+  const existing = async () => {
+    if (clientRef === null) return null;
+    const [row] = await query('SELECT * FROM sessions WHERE patient_id = $1 AND client_ref = $2', [patientId, clientRef]);
+    return row || null;
+  };
+  const replay = async (row) => {
+    const history = await query('SELECT * FROM sessions WHERE patient_id = $1 ORDER BY started_at DESC LIMIT 60', [patientId]);
+    return { session: sessionPayload(row, patientId, assessProgress(history, plan).status), assessment: assessProgress(history, plan), triage: null, duplicate: true };
+  };
+  const prior = await existing();
+  if (prior) return replay(prior);
   const peaks = b.reps.map((r) => Number(r.peak_angle));
   const peak = Math.max(...peaks);
   const meanRom = peaks.reduce((a, c) => a + c, 0) / peaks.length;
@@ -48,10 +63,10 @@ export async function POST({ query, request, platform, emit, transaction, fetch,
 
   const run = async (q) => {
     const [session] = await q(
-      `INSERT INTO sessions (patient_id, plan_id, exercise_key, side, started_at, ended_at, reps, peak_rom, mean_rom, smoothness, compensation_pct, pain_score, source)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      `INSERT INTO sessions (patient_id, plan_id, exercise_key, side, started_at, ended_at, reps, peak_rom, mean_rom, smoothness, compensation_pct, pain_score, source, client_ref)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
       [patientId, plan?.id ?? null, b.exercise_key, b.side || plan?.side || 'right', startedAt, endedAt,
-        b.reps.length, peak.toFixed(1), meanRom.toFixed(1), smooth.toFixed(1), compPct.toFixed(1), pain, b.source || 'webcam'],
+        b.reps.length, peak.toFixed(1), meanRom.toFixed(1), smooth.toFixed(1), compPct.toFixed(1), pain, b.source || 'webcam', clientRef],
     );
     for (const [i, r] of b.reps.entries()) {
       await q(
@@ -61,25 +76,22 @@ export async function POST({ query, request, platform, emit, transaction, fetch,
     }
     return session;
   };
-  const session = transaction ? await transaction(({ query: q }) => run(q)) : await run(query);
+  let session;
+  try {
+    session = transaction ? await transaction(({ query: q }) => run(q)) : await run(query);
+  } catch (err) {
+    // Two concurrent requests with the same client_ref: the loser returns the winner's row.
+    if (clientRef !== null && (err?.code === '23505' || /duplicate key|unique/i.test(String(err?.message)))) {
+      const row = await existing();
+      if (row) return replay(row);
+    }
+    throw err;
+  }
 
   const history = await query('SELECT * FROM sessions WHERE patient_id = $1 ORDER BY started_at DESC LIMIT 60', [patientId]);
   const assessment = assessProgress(history, plan);
 
-  const payload = {
-    patient_id: patientId,
-    session_id: session.id,
-    exercise_key: session.exercise_key,
-    side: session.side,
-    reps: session.reps,
-    peak_rom: Number(session.peak_rom),
-    mean_rom: Number(session.mean_rom),
-    smoothness: Number(session.smoothness),
-    compensation_pct: Number(session.compensation_pct),
-    pain_score: session.pain_score,
-    source: session.source,
-    assessment_status: assessment.status,
-  };
+  const payload = sessionPayload(session, patientId, assessment.status);
   // In production Informer dispatches agents subscribed with `on: session.completed`.
   await emit('session.completed', payload);
   log('session.completed', payload);
@@ -96,4 +108,21 @@ export async function POST({ query, request, platform, emit, transaction, fetch,
     }
   }
   return { session: payload, assessment, triage };
+}
+
+function sessionPayload(session, patientId, status) {
+  return {
+    patient_id: patientId,
+    session_id: session.id,
+    exercise_key: session.exercise_key,
+    side: session.side,
+    reps: session.reps,
+    peak_rom: Number(session.peak_rom),
+    mean_rom: Number(session.mean_rom),
+    smoothness: Number(session.smoothness),
+    compensation_pct: Number(session.compensation_pct),
+    pain_score: session.pain_score,
+    source: session.source,
+    assessment_status: status,
+  };
 }
