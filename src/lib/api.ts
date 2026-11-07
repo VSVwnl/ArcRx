@@ -47,7 +47,7 @@ export interface Assessment {
 }
 export interface NewPatient {
   name: string; condition: string; exercise_key: string; side: 'left' | 'right'; target_rom: number;
-  sets?: number; reps?: number; frequency_per_week?: number; pain_threshold?: number; surgery_date?: string | null; link_to_me?: boolean;
+  sets?: number; reps?: number; frequency_per_week?: number; pain_threshold?: number; surgery_date?: string | null; link_to_me?: boolean; clinic_code: string;
 }
 export interface PatientSummary {
   id: number; name: string; mrn: string; username: string; condition: string; surgery_date: string | null; clinician: string;

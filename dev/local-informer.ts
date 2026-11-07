@@ -222,7 +222,7 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
     notify,
     email,
     context: {},
-    env: {},
+    env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('ARCRX_'))),
     platform: mock.platform,
     markdown: (t: string) => t,
     log: buildLog('[app-log]'),

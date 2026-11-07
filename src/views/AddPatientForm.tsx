@@ -14,6 +14,7 @@ export default function AddPatientForm({ onCreated, onCancel, canLink }: { onCre
   const [sets, setSets] = useState(3);
   const [freq, setFreq] = useState(5);
   const [linkToMe, setLinkToMe] = useState(canLink);
+  const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,7 +27,7 @@ export default function AddPatientForm({ onCreated, onCancel, canLink }: { onCre
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const payload: NewPatient = { name, condition, exercise_key: exercise, side, target_rom: target, reps, sets, frequency_per_week: freq, link_to_me: linkToMe };
+    const payload: NewPatient = { name, condition, exercise_key: exercise, side, target_rom: target, reps, sets, frequency_per_week: freq, link_to_me: linkToMe, clinic_code: code.trim() };
     try {
       const created = await api.createPatient(payload);
       onCreated(created.id);
@@ -80,6 +81,11 @@ export default function AddPatientForm({ onCreated, onCancel, canLink }: { onCre
         </div>
       </div>
       <p className="text-xs text-mute">{EXERCISE_SPECS[exercise].cue}</p>
+      <label className="block text-sm sm:max-w-xs">
+        <span className="text-mute">Clinic code</span>
+        <input className="field mt-1 w-full" required maxLength={64} value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="From your clinician" />
+        <span className="mt-1 block text-xs text-mute">Patients are added only with a code the clinic hands out. Hackathon demo code: 2026.</span>
+      </label>
       {canLink && (
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={linkToMe} onChange={(e) => setLinkToMe(e.target.checked)} />

@@ -6,10 +6,20 @@ import { EXERCISES, assessProgress, resolvePatientScope } from '../../lib/rehab.
 const PLAN_BOUNDS = { target_rom: [1, 180], sets: [1, 10], reps: [1, 50], frequency_per_week: [1, 14], pain_threshold: [0, 10] };
 const PLAN_DEFAULTS = { sets: 3, reps: 10, frequency_per_week: 5, pain_threshold: 5 };
 
-export async function POST({ query, transaction, request }) {
+const DEMO_CLINIC_CODE = '2026';
+
+export async function POST({ query, transaction, request, env, log }) {
   const roles = request.roles || [];
   if (!roles.includes('clinician') && !roles.includes('admin')) return { status: 403, body: { message: 'Only clinicians can add patients' } };
   const b = request.body || {};
+  // Clinic code: the clinician hands it out, so a signed-in visitor cannot add
+  // records at will. Configured per tenant (Admin → Environment); demo default.
+  const expected = String(env?.ARCRX_CLINIC_CODE || DEMO_CLINIC_CODE);
+  const given = String(b.clinic_code ?? '').trim();
+  if (!given || given.length > 64 || given !== expected) {
+    log?.warn?.('patient add refused: bad clinic code', { user: request.user?.username || request.user?.id || null });
+    return { status: 403, body: { message: 'That clinic code is not valid. Ask your clinician for the current code.' } };
+  }
   const name = String(b.name || '').trim().replace(/\s+/g, ' ');
   const condition = String(b.condition || '').trim();
   if (name.length < 2 || name.length > 80) return { status: 400, body: { message: 'Name must be 2-80 characters' } };

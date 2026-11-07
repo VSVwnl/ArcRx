@@ -211,7 +211,18 @@ section('In-process triage when the install has no AI model');
 
 section('Adding patients');
 {
-  const body = { name: 'Jordan Lee', condition: 'ACL reconstruction (L), week 3', exercise_key: 'elbow_flexion', side: 'left', target_rom: 120, reps: 12, sets: 3, frequency_per_week: 4, link_to_me: true };
+  const body = { name: 'Jordan Lee', condition: 'ACL reconstruction (L), week 3', exercise_key: 'elbow_flexion', side: 'left', target_rom: 120, reps: 12, sets: 3, frequency_per_week: 4, link_to_me: true, clinic_code: '2026' };
+  r = await call('server/patients/index.js', 'POST', 'clinician', { body: { ...body, clinic_code: '1234' } });
+  ok('wrong clinic code → 403', r.status === 403, `status ${r.status}`);
+  r = await call('server/patients/index.js', 'POST', 'clinician', { body: { ...body, clinic_code: '' } });
+  ok('missing clinic code → 403', r.status === 403, `status ${r.status}`);
+  {
+    const mod = await imp('server/patients/index.js');
+    const withEnv = await mod.POST({ ...base(), env: { ARCRX_CLINIC_CODE: 'secret-9' }, request: { ...reqOf('clinician', { body: { ...body, link_to_me: false } }), method: 'POST' } });
+    ok('tenant-configured code overrides the demo default', withEnv.status === 403, `status ${withEnv.status}`);
+    const okEnv = await mod.POST({ ...base(), env: { ARCRX_CLINIC_CODE: 'secret-9' }, request: { ...reqOf('clinician', { body: { ...body, link_to_me: false, clinic_code: 'secret-9' } }), method: 'POST' } });
+    ok('configured code accepted', okEnv.status === 201, `status ${okEnv.status}`);
+  }
   r = await call('server/patients/index.js', 'POST', 'patient', { body });
   ok('patient role cannot add patients', r.status === 403, `status ${r.status}`);
   for (const [label, bad] of Object.entries({ 'short name': { ...body, name: 'J' }, 'unknown exercise': { ...body, exercise_key: 'squat' }, 'target out of range': { ...body, target_rom: 400 }, 'fractional reps': { ...body, reps: 2.5 }, 'bad date': { ...body, surgery_date: 'yesterday' } })) {
