@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSessionEngine, type Source } from '../cv/useSessionEngine';
 import { COMPENSATION_LABELS, EXERCISE_SPECS, type ExerciseKey, type Side } from '../cv/types';
-import { api, type AgentRun, type Assessment, type PatientSummary } from '../lib/api';
+import { api, ApiError, type AgentRun, type Assessment, type PatientSummary } from '../lib/api';
 import { isDevPlatform } from '../lib/informer';
 import { StatusPill } from '../components/ui';
 
@@ -15,7 +15,14 @@ type Outcome = { assessment: Assessment; sessionId: number; agent: AgentRun | nu
 export default function SessionView({ patient, onSaved }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { state, start, stop, setSim } = useSessionEngine(videoRef, canvasRef);
+  const { state, start, stop, discard, snapshot, setSim } = useSessionEngine(videoRef, canvasRef);
+  // One idempotency key per session: a retry after a lost response cannot create a second row.
+  const clientRef = useRef<string>(newRef());
+  const savingRef = useRef(false);
+  const mounted = useRef(true);
+  const watchFor = useRef<number | null>(null);
+  const [saveFailed, setSaveFailed] = useState(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const plan = patient.plan;
   const [exercise, setExercise] = useState<ExerciseKey>((plan?.exercise_key as ExerciseKey) || 'shoulder_abduction');
   const [side, setSide] = useState<Side>(plan?.side || 'right');
@@ -33,8 +40,11 @@ export default function SessionView({ patient, onSaved }: Props) {
   // poll the audit log for this session's run so the card fills in as it lands.
   const watchTriage = (out: Outcome) => {
     const deadline = Date.now() + 60_000;
+    watchFor.current = out.sessionId;
     const tick = async () => {
+      if (!mounted.current || watchFor.current !== out.sessionId) return;
       const runs = await api.agentRuns({ sessionId: out.sessionId, limit: 3 }).catch(() => []);
+      if (!mounted.current || watchFor.current !== out.sessionId) return; // a newer session started meanwhile
       const done = runs.find((r) => r.steps.some((s) => s.toolCalls?.some((c) => c.name === 'write_progress_note')));
       if (done) {
         setOutcome({ ...out, agent: { agent: done.agent, trigger: done.trigger_event, status: done.status, steps: done.steps, mode: 'Informer AI', summary: done.summary || undefined } });
@@ -47,19 +57,29 @@ export default function SessionView({ patient, onSaved }: Props) {
     watchTimer.current = window.setTimeout(tick, 2500);
   };
 
+  // Follow the prescription when it changes (e.g. the triage agent just progressed
+  // it). Never clear the outcome here: the plan changes right after a save, and the
+  // result card must stay. A different patient remounts this view (keyed by id).
   useEffect(() => {
     setExercise((plan?.exercise_key as ExerciseKey) || 'shoulder_abduction');
     setSide(plan?.side || 'right');
     setTarget(plan?.target_rom || 120);
-    setOutcome(null);
-  }, [patient.id, plan?.exercise_key, plan?.side, plan?.target_rom]);
+  }, [plan?.exercise_key, plan?.side, plan?.target_rom]);
 
   const spec = EXERCISE_SPECS[exercise];
   const running = state.status === 'calibrating' || state.status === 'tracking';
+  const starting = state.status === 'starting';
+  // Reps scored but not yet saved (stopped, camera lost, or a save that failed).
+  const hasUnsaved = !running && !starting && state.reps.length > 0 && !outcome;
+  const live = running && state.inFrame;
   const pct = Math.max(0, Math.min(1.25, state.angle / target));
   const activeFlags = Object.entries(state.flags).filter(([, v]) => v).map(([k]) => k);
 
   const begin = async (src: Source) => {
+    if (watchTimer.current) window.clearTimeout(watchTimer.current);
+    watchFor.current = null;
+    clientRef.current = newRef();
+    setSaveFailed(false);
     setError(null);
     setOutcome(null);
     setSource(src);
@@ -72,19 +92,27 @@ export default function SessionView({ patient, onSaved }: Props) {
   };
 
   const finish = async () => {
-    if (!state.reps.length) {
+    const snap = snapshot();
+    if (!snap.reps.length) {
       setError('No reps were counted yet. Complete at least one full movement before finishing.');
       return;
     }
-    stop();
+    if (savingRef.current) return;
+    savingRef.current = true;
+    if (running) stop();
     setSaving(true);
     setError(null);
+    setSaveFailed(false);
     try {
-      const startedAt = state.startedAt || new Date().toISOString();
+      const startedAt = snap.startedAt || new Date().toISOString();
       const saved = await api.saveSession({
         patient_id: patient.id, exercise_key: exercise, side, started_at: startedAt, ended_at: new Date().toISOString(),
-        pain_score: pain, source, reps: state.reps,
+        pain_score: pain, source, reps: snap.reps, client_ref: clientRef.current,
       });
+      if (!saved || typeof saved !== 'object' || !saved.session || typeof saved.session.session_id !== 'number' || !saved.assessment) {
+        throw new Error('The server answered in an unexpected format, so the save could not be confirmed.');
+      }
+      if (!mounted.current) return;
       const out: Outcome = { assessment: saved.assessment, sessionId: saved.session.session_id, agent: null };
       setOutcome(out);
       // Informer dispatches `on: session.completed` agents itself in production;
@@ -103,9 +131,12 @@ export default function SessionView({ patient, onSaved }: Props) {
       }
       onSaved();
     } catch (err) {
-      setError((err as Error).message);
+      if (!mounted.current) return;
+      setError(saveErrorMessage(err));
+      setSaveFailed(true);
     } finally {
-      setSaving(false);
+      savingRef.current = false;
+      if (mounted.current) setSaving(false);
     }
   };
 
@@ -126,7 +157,13 @@ export default function SessionView({ patient, onSaved }: Props) {
           </span>
         </div>
 
-        {state.status === 'idle' && !outcome && (
+        {hasUnsaved && state.status !== 'error' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-6 text-center">
+            <p className="text-sm text-paper">Session stopped · {state.reps.length} rep{state.reps.length > 1 ? 's' : ''} scored, not saved yet</p>
+            <p className="text-xs text-mute">Save it below, or discard it to start again.</p>
+          </div>
+        )}
+        {state.status === 'idle' && !outcome && !hasUnsaved && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
             <p className="max-w-sm text-sm text-mute">{spec.cue}</p>
             <div className="flex gap-2">
@@ -151,8 +188,8 @@ export default function SessionView({ patient, onSaved }: Props) {
               {state.status === 'calibrating' ? state.statusText : state.inFrame ? state.statusText : state.statusText}
             </div>
             <div className="numeral rounded-md bg-ink-900/85 px-3 py-1 text-right backdrop-blur">
-              <div className="text-3xl font-semibold" style={{ color: activeFlags.length ? '#F0636B' : '#F5B942' }}>
-                {state.angle.toFixed(0)}<span className="text-base text-mute">°</span>
+              <div className="text-3xl font-semibold" style={{ color: !live ? '#8A96B3' : activeFlags.length ? '#F0636B' : '#F5B942' }}>
+                {live ? state.angle.toFixed(0) : '—'}<span className="text-base text-mute">°</span>
               </div>
               <div className="text-[11px] text-mute">{state.phase !== 'rest' ? `rep ${state.reps.length + 1} · peak ${state.repPeak.toFixed(0)}°` : state.reps.length ? `last rep ${state.reps[state.reps.length - 1].peak_angle.toFixed(0)}°` : 'ready'}</div>
             </div>
@@ -193,11 +230,11 @@ export default function SessionView({ patient, onSaved }: Props) {
             <span className="text-xs text-mute">{plan ? `${plan.sets} × ${plan.reps} reps` : ''}</span>
           </div>
           <div className="numeral mt-1 flex items-baseline gap-2">
-            <span className="text-6xl font-semibold leading-none" style={{ color: running ? '#F5B942' : '#8A96B3' }}>{state.angle.toFixed(0)}°</span>
-            <span className="text-sm text-mute">of {target}° target</span>
+            <span className="text-6xl font-semibold leading-none" style={{ color: live ? '#F5B942' : '#8A96B3' }}>{live ? `${state.angle.toFixed(0)}°` : '—'}</span>
+            <span className="text-sm text-mute">{running && !state.inFrame ? 'not tracking: no reading' : `of ${target}° target`}</span>
           </div>
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink-800">
-            <div className="h-full rounded-full transition-[width] duration-100" style={{ width: `${Math.min(100, pct * 100)}%`, background: pct >= 1 ? '#4FD1C5' : '#F5B942' }} />
+            <div className="h-full rounded-full transition-[width] duration-100" style={{ width: `${live ? Math.min(100, pct * 100) : 0}%`, background: pct >= 1 ? '#4FD1C5' : '#F5B942' }} />
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {spec.compensations.map((k) => (
@@ -246,26 +283,47 @@ export default function SessionView({ patient, onSaved }: Props) {
             <span className="numeral text-base text-paper">{pain}</span>
           </label>
           <input type="range" min={0} max={10} value={pain} className="mt-1 w-full accent-amber" onChange={(e) => setPain(Number(e.target.value))} />
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             {running ? (
               <>
                 <button className="btn btn-teal flex-1" onClick={finish} disabled={saving}>{saving ? 'Saving…' : 'Finish & save session'}</button>
                 <button className="btn" onClick={stop}>Stop</button>
               </>
+            ) : hasUnsaved ? (
+              <>
+                <button className="btn btn-teal flex-1" onClick={finish} disabled={saving}>{saving ? 'Saving…' : saveFailed ? 'Retry save' : 'Finish & save session'}</button>
+                <button className="btn" onClick={() => { discard(); setError(null); setSaveFailed(false); }} disabled={saving}>Discard</button>
+              </>
             ) : (
               <>
-                <button className="btn btn-primary flex-1" onClick={() => begin('webcam')} disabled={saving}>Start camera</button>
-                <button className="btn" onClick={() => begin('simulation')} disabled={saving}>Demo simulation</button>
+                <button className="btn btn-primary flex-1" onClick={() => begin('webcam')} disabled={saving || starting}>Start camera</button>
+                <button className="btn" onClick={() => begin('simulation')} disabled={saving || starting}>Demo simulation</button>
               </>
             )}
           </div>
-          {error && <p className="mt-2 text-xs text-coral">{error}</p>}
+          {error && <p role="alert" className="mt-2 text-xs text-coral">{error}{saveFailed ? ' Your reps are kept.' : ''}</p>}
         </div>
 
         {outcome && <OutcomeCard outcome={outcome} />}
       </div>
     </div>
   );
+}
+
+function newRef(): string {
+  try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); } catch { /* insecure context */ }
+  return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/** Plain-language save errors; the reps stay on screen for a retry in every case. */
+function saveErrorMessage(err: unknown): string {
+  const status = err instanceof ApiError ? err.status : 0;
+  if (status === 401 || status === 403) return 'Your sign-in has expired or does not allow this. Sign in again, then retry.';
+  if (status === 429) return 'Too many requests right now. Wait a few seconds, then retry.';
+  if (status >= 500) return `The server could not save the session (HTTP ${status}). Try again in a moment.`;
+  if (status === 400) return `The session was rejected: ${(err as Error).message}`;
+  if (err instanceof TypeError || /failed to fetch|network/i.test(String((err as Error)?.message))) return 'No connection to the app. Check the network, then retry.';
+  return (err as Error)?.message || 'The session could not be saved.';
 }
 
 function OutcomeCard({ outcome }: { outcome: Outcome }) {

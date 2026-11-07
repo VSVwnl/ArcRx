@@ -56,6 +56,9 @@ export function useSessionEngine(videoRef: RefObject<HTMLVideoElement | null>, c
   const frameTimes = useRef<number[]>([]);
   const lastVideoT = useRef(-1);
   const simT0 = useRef(0);
+  // Incremented by every start() and stop(): a start whose awaits resolve after a
+  // newer start/stop (or after unmount) releases what it acquired and bails out.
+  const generation = useRef(0);
 
   const patch = (p: Partial<EngineState>) => Object.assign(live.current, p);
 
@@ -70,13 +73,28 @@ export function useSessionEngine(videoRef: RefObject<HTMLVideoElement | null>, c
     raf.current = 0;
   };
 
-  const stop = useCallback(() => {
-    stopLoop();
+  const releaseCamera = useCallback(() => {
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
-    patch({ status: 'idle', statusText: 'Stopped', inFrame: false });
   }, [videoRef]);
+
+  const stop = useCallback(() => {
+    generation.current++;
+    stopLoop();
+    releaseCamera();
+    patch({ status: 'idle', statusText: 'Stopped', inFrame: false });
+  }, [releaseCamera]);
+
+  /** Stop and forget the current session's reps (Discard). */
+  const discard = useCallback(() => {
+    stop();
+    live.current = { ...INITIAL };
+    setState({ ...INITIAL });
+  }, [stop]);
+
+  /** The live engine state (React state lags it by up to one publish tick). */
+  const snapshot = useCallback((): EngineState => ({ ...live.current, reps: [...live.current.reps] }), []);
 
   useEffect(() => () => stop(), [stop]);
 
@@ -199,6 +217,8 @@ export function useSessionEngine(videoRef: RefObject<HTMLVideoElement | null>, c
 
   const start = useCallback(async (o: EngineOptions) => {
     stop();
+    const my = ++generation.current;
+    const superseded = () => my !== generation.current;
     opts.current = o;
     const spec = EXERCISE_SPECS[o.exercise];
     detector.current = new RepDetector(spec.restAngle, spec.minRepRom);
@@ -211,34 +231,56 @@ export function useSessionEngine(videoRef: RefObject<HTMLVideoElement | null>, c
       if (o.source === 'webcam') {
         patch({ statusText: 'Requesting camera' });
         const ms = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, audio: false });
+        if (superseded()) { ms.getTracks().forEach((t) => t.stop()); return; }
         stream.current = ms;
-        const video = videoRef.current!;
+        // Camera unplugged, revoked, or taken by another app: say so and stop the
+        // loop instead of reporting "step into frame" on a dead feed. Reps so far stay.
+        ms.getVideoTracks().forEach((t) => t.addEventListener('ended', () => {
+          if (stream.current !== ms) return;
+          generation.current++;
+          stopLoop();
+          releaseCamera();
+          patch({ status: 'error', inFrame: false, statusText: 'The camera stopped (unplugged, turned off, or taken by another app). Start it again, or switch to Demo simulation.' });
+        }));
+        const video = videoRef.current;
+        if (!video) { releaseCamera(); return; }
         video.srcObject = ms;
         await video.play();
-        landmarker.current = await loadLandmarker(spec.model, (s) => patch({ statusText: s }));
+        if (superseded()) { if (stream.current === ms) releaseCamera(); return; }
+        landmarker.current = await loadLandmarker(spec.model, (s) => { if (!superseded()) patch({ statusText: s }); });
+        if (superseded()) { if (stream.current === ms) releaseCamera(); return; }
       } else {
         sim.current = defaultSim(o.exercise, o.side, o.targetRom);
         simT0.current = performance.now() + 400; // a beat at rest before the first rep
       }
     } catch (err) {
-      const message = (err as Error)?.name === 'NotAllowedError'
+      // Never leave the camera on after a failed start (e.g. the model failed to load).
+      releaseCamera();
+      if (superseded()) return;
+      const name = (err as Error)?.name;
+      const message = name === 'NotAllowedError' || name === 'SecurityError'
         ? 'Camera permission was denied. Allow the camera in the address bar, or switch to Demo simulation.'
-        : (err as Error)?.name === 'NotFoundError'
-          ? 'No camera found. Switch to Demo simulation.'
-          : `Could not start: ${(err as Error)?.message || err}`;
+        : name === 'NotFoundError' || name === 'OverconstrainedError'
+          ? 'No usable camera found. Connect one, or switch to Demo simulation.'
+          : name === 'NotReadableError' || name === 'AbortError'
+            ? 'The camera is in use by another app or could not start. Close other apps using it and try again, or switch to Demo simulation.'
+            : /model|fetch|wasm/i.test(String((err as Error)?.message))
+              ? 'The vision model could not load. Check the connection and try again, or switch to Demo simulation.'
+              : `Could not start the camera: ${(err as Error)?.message || err}`;
       patch({ status: 'error', statusText: message });
       throw err;
     }
+    if (superseded()) return;
     calib.current = { t0: performance.now(), drop: new RunningMean(), rest: new RunningMean(), yaw: new RunningMean(), pitch: new RunningMean(), roll: new RunningMean() };
     patch({ status: 'calibrating', statusText: 'Hold still — calibrating' });
     stopLoop();
     raf.current = requestAnimationFrame(loop);
-  }, [stop]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stop, releaseCamera]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Nudge the simulated patient (demo controls). */
   const setSim = useCallback((p: Partial<SimConfig>) => {
     if (sim.current) sim.current = { ...sim.current, ...p };
   }, []);
 
-  return { state, start, stop, setSim };
+  return { state, start, stop, discard, snapshot, setSim };
 }

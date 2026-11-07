@@ -97,7 +97,7 @@ export const api = {
   addNote: (patient_id: number, note: string) => call<Note>('POST', '/api/notes', { patient_id, note }),
   updatePlan: (id: number, patch: Partial<Plan> & { rationale?: string }) => call<Plan>('PATCH', `/api/plans/${id}`, patch),
   ask: (question: string) => call<AskResult>('POST', '/api/ask', { question }),
-  saveSession: (payload: { patient_id: number; exercise_key: string; side: string; started_at: string; ended_at: string; pain_score: number; source: string; reps: RepResult[] }) =>
+  saveSession: (payload: { patient_id: number; exercise_key: string; side: string; started_at: string; ended_at: string; pain_score: number; source: string; reps: RepResult[]; client_ref?: string }) =>
     call<{ session: Record<string, unknown> & { session_id: number }; assessment: Assessment; triage?: AgentRun | null }>('POST', '/api/sessions', payload),
   agents: () => call<AgentInfo[]>('GET', '/api/_agent'),
   triggerAgent: (name: string, event: string, payload: unknown) => call<AgentRun>('POST', `/api/_agent/${name}/_trigger`, { event, payload }),

@@ -16,7 +16,7 @@ export default function PatientHome({ patients, refresh, selfKey, canAdd }: { pa
   useEffect(() => {
     if (!patient) return;
     let alive = true;
-    api.patient(patient.id).then((d) => alive && setDetail(d)).catch(() => {});
+    api.patient(patient.id).then((d) => alive && setDetail(d)).catch(() => alive && setDetail(null));
     return () => { alive = false; };
   }, [patient?.id, patients]);
 
@@ -37,7 +37,9 @@ export default function PatientHome({ patients, refresh, selfKey, canAdd }: { pa
   }
   const m = patient.assessment.metrics;
   const spec = patient.plan ? EXERCISE_SPECS[patient.plan.exercise_key as ExerciseKey] : null;
-  const history = (detail?.sessions || []).slice().reverse().slice(-20).map((s) => ({ label: fmtDate(s.started_at), value: s.peak_rom }));
+  // Only show a record that belongs to the selected patient (never the previous one while loading).
+  const mineDetail = detail && detail.patient.id === patient.id ? detail : null;
+  const history = (mineDetail?.sessions || []).slice().reverse().slice(-20).map((s) => ({ label: fmtDate(s.started_at), value: s.peak_rom }));
 
   return (
     <div className="space-y-4">
@@ -57,17 +59,21 @@ export default function PatientHome({ patients, refresh, selfKey, canAdd }: { pa
         </div>
       </div>
 
-      <SessionView patient={patient} onSaved={refresh} />
+      {/* Keyed by patient: switching patient ends the running session (camera released)
+          instead of attributing one patient's reps to another. */}
+      <SessionView key={patient.id} patient={patient} onSaved={refresh} />
 
       <div className="grid gap-3 md:grid-cols-4">
-        <Stat label="Best this week" value={m.latestPeak.toFixed(0)} unit={`° of ${m.target}°`} tone="amber" />
+        <Stat label="Best this week" value={m.sessions ? m.latestPeak.toFixed(0) : '—'} unit={`° of ${m.target}°`} tone="amber" />
         <Stat label="Sessions this week" value={`${m.sessionsLast7} / ${m.prescribedPerWeek}`} tone="teal" />
         <Stat label="Clean reps" value={`${Math.max(0, 100 - m.compensationPct).toFixed(0)}%`} tone={m.compensationPct >= 40 ? 'coral' : 'teal'} />
         <Stat label="Trend" value={`${m.slopePerSession >= 0 ? '+' : ''}${m.slopePerSession.toFixed(1)}`} unit="° / session" tone={m.slopePerSession < 0 ? 'coral' : undefined} />
       </div>
 
       <Section title="Your range of motion over time">
-        {history.length ? <MiniLine data={history} height={180} /> : <Spinner label="Loading history" />}
+        {!mineDetail ? <Spinner label="Loading history" /> : history.length ? <MiniLine data={history} height={180} /> : (
+          <p className="py-8 text-center text-sm text-mute">No sessions yet. Each saved session adds a point here.</p>
+        )}
         <p className="mt-2 text-xs text-mute">Each point is the best rep of a session. Target: {m.target}°.</p>
       </Section>
     </div>
