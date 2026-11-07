@@ -33,7 +33,8 @@ accounts:
 # are granted automatically.
 access:
   apis:
-    - GET /api/ai-budget            # is an AI model configured? (else deterministic triage runs in-process)
+    - GET /api/ai-budget            # is AI configured, and (below) is any model listed?
+    - GET /api/chat-models          # else the deterministic triage protocol runs in-process
     - GET /api/apps/*/agents
     - POST /api/apps/*/agents/*/_trigger
 

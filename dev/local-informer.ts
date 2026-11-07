@@ -184,6 +184,7 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
   async function apiFetch(path: string, opts: { method?: string; body?: unknown } = {}) {
     const clean = String(path).replace(/^\/?api\//, '').replace(/^\//, '');
     if (clean === 'ai-budget') return { status: 200, body: { configured: aiAvailable(), mirror: 'arcrx-local' }, contentType: 'application/json' };
+    if (clean === 'chat-models') return { status: 200, body: { total: aiAvailable() ? 1 : 0, _embedded: { 'inf:model': aiAvailable() ? [{ slug: 'go_everyday', name: 'Anthropic (local mirror)' }] : [] } }, contentType: 'application/json' };
     const m = clean.match(/^models\/([^/]+)\/(_object|_completion|_chat)$/);
     if (!m) return { status: 404, body: { message: `offline mirror: /api/${clean} is not available without INFORMER_URL` }, contentType: 'application/json' };
     if (!aiAvailable()) return { status: 503, body: { message: 'offline mirror: set ANTHROPIC_API_KEY to enable AI; using rule-based fallback' }, contentType: 'application/json' };

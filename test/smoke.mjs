@@ -103,7 +103,7 @@ section('Manual agent trigger (rate limit reserves atomically)');
   r = await trig.POST(mk(null));
   ok('trigger without identity → 401', r.status === 401, `status ${r.status}`);
   // AI configured but the platform agent list is unavailable → 503 and the slot is released.
-  const aiOn = async (p) => (p === 'ai-budget' ? { status: 200, body: { configured: true } } : { status: 404, body: {} });
+  const aiOn = async (p) => (p === 'ai-budget' ? { status: 200, body: { configured: true } } : p === 'chat-models' ? { status: 200, body: { total: 1 } } : { status: 404, body: {} });
   r = await trig.POST({ ...mk({ id: 'u0' }), fetch: aiOn });
   ok('AI configured but agent API unavailable → 503', r.status === 503, `status ${r.status}`);
   const n0 = (await query('SELECT count(*)::int n FROM agent_triggers'))[0].n;
@@ -203,8 +203,10 @@ section('In-process triage when the install has no AI model');
   r = await mod.POST({ ...prodBag, request: { ...reqOf('clinician', { body: { ...good, patient_id: 4 } }), method: 'POST' } });
   const steps = r?.triage?.steps || [];
   ok('session POST on a platform without AI returns the inline triage run', steps.some((s) => s.toolCalls?.[0].name === 'write_progress_note'), JSON.stringify(r?.triage || r).slice(0, 200));
-  r = await mod.POST({ ...prodBag, fetch: async () => ({ status: 200, body: { configured: true } }), request: { ...reqOf('clinician', { body: { ...good, patient_id: 4 } }), method: 'POST' } });
+  r = await mod.POST({ ...prodBag, fetch: async (p) => ({ status: 200, body: p === 'chat-models' ? { total: 1 } : { configured: true } }), request: { ...reqOf('clinician', { body: { ...good, patient_id: 4 } }), method: 'POST' } });
   ok('session POST with AI configured leaves triage to Informer', r?.triage === null, JSON.stringify(r?.triage));
+  r = await mod.POST({ ...prodBag, fetch: async (p) => ({ status: 200, body: p === 'chat-models' ? { total: 0 } : { configured: true } }), request: { ...reqOf('clinician', { body: { ...good, patient_id: 4 } }), method: 'POST' } });
+  ok('credit pool but empty model catalog → still runs triage inline', (r?.triage?.steps || []).length > 0, JSON.stringify(r?.triage).slice(0, 120));
 }
 
 section('Plan guard rails');

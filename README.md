@@ -10,9 +10,14 @@ An Informer agent then triages the session: it raises clinician alerts, progress
 prescription within guard rails and writes an objective progress note. Clinicians get
 longitudinal dashboards, an alert queue and natural-language questions over their caseload.
 
+**Live:** https://bodapati-arcrx-rehab-coach.go.informer-apps.com — open it on a phone or laptop,
+create an account (demo workspace, synthetic patients) or sign in with Informer.
+
 ```bash
 npm install
 npm run dev          # http://localhost:5173 — fully offline: PGlite workspace + deterministic agents
+npm test             # 73 end-to-end checks on in-memory Postgres
+inf deploy           # build + deploy to the Informer tenant you are signed in to
 ```
 
 ---
@@ -100,7 +105,7 @@ subscribes `rehab_triage` with `on: session.completed`. Tools emit `alert.create
 | Plugin | `dev/local-informer.ts` | `@entrinsik/vite-plugin-informer` |
 | Workspace | PGlite under `.informer-local/` (migrations applied on boot) | Informer dev workspace (`npm run workspace:init`) |
 | Agents | Deterministic plans from `agents/*.yaml`, or the Anthropic SDK loop with `ANTHROPIC_API_KEY` | Informer AI (`/api/models/:id/_chat`) via `/api/_agent/:name/_trigger` |
-| Deploy | — | `npm run deploy` |
+| Deploy | — | `inf deploy` (or `npm run build && npx informer-deploy`) |
 
 ## Challenges
 
@@ -141,7 +146,7 @@ protocol templates per surgery type.
 ## Tests
 
 ```bash
-npm test          # 57 end-to-end checks, no network or API key, about 10 seconds (Node 22.18+)
+npm test          # 73 end-to-end checks, no network or API key, about 10 seconds (Node 22.18+)
 ```
 
 The suite applies the real migrations to an in-memory Postgres (PGlite) and calls the real route

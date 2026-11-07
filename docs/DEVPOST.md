@@ -26,7 +26,8 @@ A webcam goniometer with a physical therapist's judgment in the loop: measures e
 
 - GitHub repository: https://github.com/VSVwnl/ArcRx
 - Demo video (≤ 3 min): [[YouTube / Loom URL — record from docs/DEMO_SCRIPT.md]]
-- Live demo: runs locally with `npm install && npm run dev` (no hosted instance needed; fully offline)
+- Live app (deployed on Entrinsik Informer): https://bodapati-arcrx-rehab-coach.go.informer-apps.com
+- Also runs fully offline: `npm install && npm run dev`
 
 ## Built with (tags)
 
