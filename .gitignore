@@ -7,3 +7,6 @@ dist/
 .informer-local/
 *.log
 .DS_Store
+
+# TypeScript incremental build state
+*.tsbuildinfo
