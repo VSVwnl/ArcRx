@@ -3,6 +3,30 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import informer from '@entrinsik/vite-plugin-informer';
 import { localInformer } from './dev/local-informer.ts';
+import { readFileSync } from 'node:fs';
+import { load as loadYaml } from 'js-yaml';
+
+// `virtual:arcrx-manifest` — informer.yaml parsed at build time, so the agent
+// console lists exactly the agents that were deployed without shipping a YAML
+// parser to the browser.
+function manifestModule() {
+  const id = 'virtual:arcrx-manifest';
+  const resolved = '\0' + id;
+  return {
+    name: 'arcrx-manifest',
+    resolveId(source: string) { return source === id ? resolved : null; },
+    load(target: string) {
+      if (target !== resolved) return null;
+      const manifest = loadYaml(readFileSync(new URL('./informer.yaml', import.meta.url), 'utf8')) || {};
+      return `export default ${JSON.stringify(manifest)};`;
+    },
+    handleHotUpdate(ctx: { file: string; server: { moduleGraph: { getModuleById(id: string): unknown }; reloadModule(mod: never): void } }) {
+      if (!ctx.file.endsWith('informer.yaml')) return;
+      const mod = ctx.server.moduleGraph.getModuleById(resolved);
+      if (mod) ctx.server.reloadModule(mod as never);
+    },
+  };
+}
 
 // ArcRx runs in two modes with one codebase:
 //   1. INFORMER_URL set   -> the official Informer dev plugin proxies /api,
@@ -17,6 +41,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
+      manifestModule(),
       offline
         ? localInformer({ mock: { theme: 'dark', roles: ['clinician', 'patient'] } })
         : informer({ mock: { theme: 'dark', roles: ['clinician', 'patient'] } }),

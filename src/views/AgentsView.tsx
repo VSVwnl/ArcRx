@@ -1,22 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { load as loadYaml } from 'js-yaml';
-import manifestRaw from '../../informer.yaml?raw';
+import manifest from 'virtual:arcrx-manifest';
 import { api, type AgentInfo, type AgentRun, type AgentRunRow, type AgentStep } from '../lib/api';
 import { isDevPlatform } from '../lib/informer';
 import { Section, Spinner, timeAgo } from '../components/ui';
 
-// The agent roster comes from informer.yaml itself (bundled at build time), so
-// the console describes exactly what was deployed. Runs come from the audit
-// rows the tools write, identical on Informer and in the dev servers.
+// The agent roster comes from informer.yaml itself, parsed at build time into a
+// virtual module, so the console describes exactly what was deployed. Runs come
+// from the audit rows the tools write, identical on Informer and in the dev servers.
 function agentsFromManifest(): AgentInfo[] {
-  try {
-    const m = loadYaml(manifestRaw) as { agents?: Record<string, { description?: string; model?: string; tools?: string[]; on?: string | string[]; cron?: string }> };
-    return Object.entries(m.agents || {}).map(([name, a]) => ({
-      name, description: a.description?.trim() || null, model: a.model || 'go_everyday', tools: a.tools || [], on: a.on || [], cron: a.cron || null,
-    }));
-  } catch {
-    return [];
-  }
+  return Object.entries(manifest.agents || {}).map(([name, a]) => ({
+    name, description: a.description?.trim() || null, model: a.model || 'go_everyday', tools: a.tools || [], on: a.on || [], cron: a.cron || null,
+  }));
 }
 
 export default function AgentsView({ refresh }: { refresh: () => void }) {
