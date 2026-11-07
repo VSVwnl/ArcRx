@@ -29,7 +29,7 @@ export default function ClinicianDashboard({ patients, refresh, version }: { pat
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label="Patients" value={t?.patients ?? '—'} />
         <Stat label="Sessions · 7 days" value={t?.sessions_7d ?? '—'} tone="teal" />
         <Stat label="Open alerts" value={t?.open_alerts ?? '—'} tone={t?.high_alerts ? 'coral' : undefined} />
@@ -38,8 +38,36 @@ export default function ClinicianDashboard({ patients, refresh, version }: { pat
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)]">
-        <Section title="Caseload" aside={<span className="text-xs text-mute">Click a patient for the longitudinal record</span>} className="overflow-hidden">
-          <table className="data">
+        <Section title="Caseload" aside={<span className="hidden text-xs text-mute sm:inline">Click a patient for the longitudinal record</span>} className="overflow-hidden">
+          {/* Phone: one card per patient with the fields that matter. */}
+          <ul className="space-y-2 sm:hidden">
+            {patients.map((p) => {
+              const m = p.assessment.metrics;
+              const spec = p.plan ? EXERCISE_SPECS[p.plan.exercise_key as ExerciseKey] : null;
+              return (
+                <li key={p.id}>
+                  <button className="w-full rounded-md border border-ink-700 bg-ink-800/40 p-3 text-left" onClick={() => setSelected(p.id)}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium">{p.name}</div>
+                        <div className="truncate text-xs text-mute">{spec?.label} · {p.plan?.side}</div>
+                      </div>
+                      <StatusPill status={p.assessment.status} label={p.assessment.statusLabel} />
+                    </div>
+                    <div className="mt-2 flex items-end justify-between gap-3">
+                      <div className="numeral text-sm">
+                        <span style={{ color: '#F5B942' }}>{m.latestPeak.toFixed(0)}°</span>
+                        <span className="text-mute"> / {m.target}°</span>
+                        <div className="mt-1 text-xs text-mute">{m.sessionsLast7}/{m.prescribedPerWeek} this week{p.openAlerts ? ` · ${p.openAlerts} alert${p.openAlerts > 1 ? 's' : ''}` : ''}</div>
+                      </div>
+                      <Sparkline values={p.sparkline} target={m.target} />
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <table className="data hidden sm:table">
             <thead>
               <tr><th>Patient</th><th>Exercise</th><th>Trajectory</th><th>Latest / target</th><th>Last 14 sessions</th><th>Adherence</th><th>Alerts</th></tr>
             </thead>

@@ -12,9 +12,15 @@ requires:
   informer: '>=2026.2.0'
 
 # The host page and assets serve anonymously; every server/ route still needs a
-# session. Visitors create an account on the app itself (demo workspace with
-# synthetic patients, so new accounts get the clinician role) or use
-# "Sign in with Informer" for tenant users, whose roles come from Sharing.
+# session. Visitors create an account on the app itself or use "Sign in with
+# Informer" for tenant users, whose roles come from Sharing.
+#
+# DEMO SETTING — hackathon judging on a workspace of synthetic patients: new
+# self-registered accounts open as a clinician so judges see the whole app
+# without an admin promoting them. For a real clinic set `defaultRole: patient`
+# (own record only) or `signup: invite`, and grant clinician in the Users tab.
+# Local accounts can never call platform APIs; the app's own routes are their
+# whole surface, and the agent trigger route is rate-limited.
 public: true
 accounts:
   issuers:
