@@ -36,7 +36,7 @@ export async function POST({ fetch, query, request, log }) {
   const list = await fetch(`apps/${appId}/agents`);
   if (list.status >= 300) {
     await release();
-    log.warn('agent list failed', { status: list.status });
+    (log?.warn || log || (() => {}))('agent list failed', { status: list.status });
     return { status: 503, body: { message: `Informer refused the agent list (${list.status}). Agents still run on their events and schedule.` } };
   }
   const items = Array.isArray(list.body) ? list.body : list.body?.items || list.body?.agents || [];

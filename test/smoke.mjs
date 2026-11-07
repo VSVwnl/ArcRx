@@ -35,7 +35,7 @@ const base = () => ({
   query, transaction, platform,
   fetch: async () => ({ status: 503, body: { message: 'no AI offline' } }),
   emit: async (event, payload) => { events.push({ event, payload }); },
-  notify: async () => {}, email: async () => {}, log: () => {}, broadcast: async () => {},
+  notify: async () => {}, email: async () => {}, log: Object.assign(() => {}, { info() {}, warn() {}, error() {}, debug() {} }), broadcast: async () => {},
 });
 const reqOf = (role, { params = {}, body = null, q = {}, username = role === 'patient' ? 'maya.chen' : 'dr.okafor' } = {}) =>
   ({ method: 'GET', params, query: q, body, headers: {}, roles: role ? [role] : [], user: { username } });
