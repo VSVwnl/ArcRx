@@ -1,0 +1,95 @@
+# ArcRx — Informer App manifest
+# Reference: Informer Developer docs → Apps → Reference → informer.yaml
+name: arcrx
+description: >
+  Browser-native computer-vision rehab coach. The webcam never leaves the
+  patient's laptop; only governed range-of-motion telemetry reaches the app
+  workspace, where clinicians get longitudinal analytics and AI triage agents
+  turn each session into actionable interventions.
+
+# Custom roles. Read client-side via window.__INFORMER__.roles and enforced
+# server-side in server/ handlers (request.roles) and route `config.roles`.
+roles:
+  - id: patient
+    name: Patient
+    description: Performs prescribed exercises and sees their own progress only.
+  - id: clinician
+    name: Clinician
+    description: Physical therapist. Sees the full caseload, alerts, notes and can adjust plans.
+  - id: admin
+    name: Program admin
+    description: Manages agents, exports de-identified program analytics.
+
+# Events emitted by server routes and tools; agents subscribe with `on:`.
+events:
+  session.completed:
+    description: A patient finished a webcam exercise session; payload carries the scored telemetry.
+  alert.created:
+    description: A triage alert was raised for a clinician.
+  plan.adjusted:
+    description: An exercise prescription was changed (by agent or clinician).
+  caseload.report:
+    description: The weekly caseload digest was produced.
+  agent.failed:
+    description: An agent run terminally failed.
+
+# AI agents. Tools are the files in tools/ (name = file name without .js).
+agents:
+  rehab_triage:
+    description: >
+      Runs after every exercise session. Reads the patient's history, assesses
+      trajectory (progress, plateau, regression, pain, compensation), raises
+      clinician alerts when warranted, proposes plan adjustments, and writes a
+      SOAP-style objective progress note.
+    on: session.completed
+    model: go_advanced
+    tools:
+      - get_patient_history
+      - assess_progress
+      - create_alert
+      - write_progress_note
+      - adjust_plan
+    onFailure: agent.failed
+    instructions: |
+      You are ArcRx's rehabilitation triage agent working for a licensed physical
+      therapist. You receive a `session.completed` event whose payload contains
+      patient_id, session_id, exercise_key, side, peak_rom, reps, smoothness,
+      compensation_pct and pain_score from a webcam-measured exercise session.
+
+      Follow this protocol every run:
+      1. Call get_patient_history for the patient (last 30 days).
+      2. Call assess_progress to get the deterministic trajectory assessment.
+      3. Decide on interventions using the assessment status:
+         - regression, pain_score >= 6, or compensation_pct >= 40 → create_alert
+           with severity "high" and a specific, observable reason.
+         - plateau (no gain across the last 5 sessions and below target) →
+           create_alert severity "medium" and call adjust_plan with a modest
+           progression (raise target_rom by 5–10° or add 2 reps) and a rationale.
+         - non_adherent → create_alert severity "low" asking for outreach.
+         - ready_to_progress → adjust_plan with a progression, no alert needed.
+         - on_track → no alert.
+      4. Always finish with write_progress_note: an objective, SOAP-style note of
+         at most 120 words quoting the measured numbers (peak ROM vs target,
+         reps, smoothness, compensation) and the action you took.
+
+      Rules: never diagnose; describe measurements and trends and recommend
+      clinician review. Use degrees for ROM. Be concise and clinical.
+
+  weekly_caseload_report:
+    description: >
+      Every Monday 07:00, summarises the caseload for each clinician: adherence
+      gaps, patients who regressed, and patients ready to progress; raises
+      low-severity outreach alerts for non-adherent patients.
+    cron: "0 7 * * 1"
+    model: go_everyday
+    tools:
+      - summarize_caseload
+      - create_alert
+    onFailure: agent.failed
+    instructions: |
+      You produce the Monday caseload digest for ArcRx. Call summarize_caseload,
+      then for every patient whose adherence over the last 7 days is below 60%
+      of their prescribed frequency, call create_alert with severity "low",
+      kind "adherence" and a one-sentence outreach suggestion. Finish with a
+      short plain-text digest grouped by status (regression, plateau,
+      non-adherent, ready to progress, on track).
