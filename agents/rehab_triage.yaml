@@ -1,0 +1,104 @@
+# rehab_triage — run protocol and offline fallback plan
+#
+# The canonical agent definition Informer deploys lives in informer.yaml
+# (agents.rehab_triage: trigger `on: session.completed`, model, tools,
+# instructions). This file is the agent's runbook:
+#   * `protocol` documents the decision rules the LLM is instructed to follow
+#   * `fallback` is a deterministic plan the offline dev mirror
+#     (dev/local-informer.ts) executes with the same tools/ when no model is
+#     reachable, so a live demo never depends on Wi-Fi.
+name: rehab_triage
+trigger: session.completed
+tools: [get_patient_history, assess_progress, create_alert, write_progress_note, adjust_plan]
+
+protocol:
+  - Read 30 days of history, then run the deterministic assessment.
+  - regression | pain >= 6 | compensation >= 40% → high alert.
+  - plateau → medium alert + modest plan progression.
+  - non_adherent → low alert (outreach).
+  - ready_to_progress → plan progression only.
+  - Always write an objective progress note quoting the numbers.
+
+fallback:
+  steps:
+    - tool: get_patient_history
+      as: history
+      args: { patient_id: $payload.patient_id, days: 30 }
+
+    - tool: assess_progress
+      as: assessment
+      args: { patient_id: $payload.patient_id }
+
+    - tool: create_alert
+      when: { path: assessment.status, in: [regression] }
+      args:
+        patient_id: $payload.patient_id
+        session_id: $payload.session_id
+        severity: high
+        kind: regression
+        title: "Peak ROM regressed to {assessment.metrics.latestPeak}° ({assessment.metrics.pctOfTarget}% of target)"
+        body: "{assessment.reasons} Suggested: clinician review within 48h; hold progression; confirm a pain-free arc before the next session."
+
+    - tool: create_alert
+      when: { all: [ { path: assessment.flags.highPain, eq: true }, { path: assessment.status, notIn: [regression] } ] }
+      args:
+        patient_id: $payload.patient_id
+        session_id: $payload.session_id
+        severity: high
+        kind: pain
+        title: "Pain {assessment.metrics.pain}/10 during {payload.exercise_key}"
+        body: "Pain exceeded the comfortable range during the latest session (peak {payload.peak_rom}°, {payload.reps} reps). Suggested: reduce range to the pain-free arc and review."
+
+    - tool: create_alert
+      when: { all: [ { path: assessment.flags.highCompensation, eq: true }, { path: assessment.status, notIn: [regression] } ] }
+      args:
+        patient_id: $payload.patient_id
+        session_id: $payload.session_id
+        severity: high
+        kind: compensation
+        title: "Compensation on {assessment.metrics.compensationPct}% of reps"
+        body: "The movement pattern is being substituted (trunk lean / shoulder hike) on most reps. Suggested: re-cue the pattern and reduce range until compensation clears."
+
+    - tool: create_alert
+      when: { path: assessment.status, in: [plateau] }
+      args:
+        patient_id: $payload.patient_id
+        session_id: $payload.session_id
+        severity: medium
+        kind: plateau
+        title: "Plateau at {assessment.metrics.latestPeak}° for 5 sessions"
+        body: "{assessment.reasons} Plan progressed modestly (+5° target, +1 rep); confirm at next visit."
+
+    - tool: adjust_plan
+      as: progression
+      when: { path: assessment.status, in: [plateau, ready_to_progress] }
+      args:
+        patient_id: $payload.patient_id
+        target_rom: { add: [history.plan.target_rom, 5] }
+        reps: { add: [history.plan.reps, 1] }
+        rationale: "Automatic progression: {assessment.reasons}"
+
+    - tool: create_alert
+      when: { path: assessment.status, in: [non_adherent] }
+      args:
+        patient_id: $payload.patient_id
+        severity: low
+        kind: adherence
+        title: "{assessment.metrics.sessionsLast7} of {assessment.metrics.prescribedPerWeek} sessions this week"
+        body: "Adherence is below 60% of the prescription. Suggested: a check-in message confirming access to the webcam program and a simpler schedule."
+
+    - tool: write_progress_note
+      args:
+        patient_id: $payload.patient_id
+        session_id: $payload.session_id
+        note: "Objective: {payload.exercise_key} ({payload.side}), peak {payload.peak_rom}° vs target {assessment.metrics.target}° ({assessment.metrics.pctOfTarget}%), {payload.reps} reps, smoothness {payload.smoothness}/100, compensation {payload.compensation_pct}% of reps, pain {payload.pain_score}/10. Assessment: {assessment.statusLabel}. {assessment.reasons} Plan: {assessment.recommendations}"
+        metrics:
+          peak_rom: $payload.peak_rom
+          target: $assessment.metrics.target
+          reps: $payload.reps
+          smoothness: $payload.smoothness
+          compensation_pct: $payload.compensation_pct
+          pain: $payload.pain_score
+          status: $assessment.status
+
+  summary: "{assessment.statusLabel}: {assessment.reasons}"

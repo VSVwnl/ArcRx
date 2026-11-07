@@ -2,7 +2,7 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import informer from '@entrinsik/vite-plugin-informer';
-import { localInformer } from './dev/local-informer';
+import { localInformer } from './dev/local-informer.ts';
 
 // ArcRx runs in two modes with one codebase:
 //   1. INFORMER_URL set   -> the official Informer dev plugin proxies /api,
@@ -17,8 +17,9 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
-      informer({ mock: { theme: 'dark', roles: ['clinician', 'patient'] } }),
-      ...(offline ? [localInformer({ mock: { theme: 'dark', roles: ['clinician', 'patient'] } })] : []),
+      offline
+        ? localInformer({ mock: { theme: 'dark', roles: ['clinician', 'patient'] } })
+        : informer({ mock: { theme: 'dark', roles: ['clinician', 'patient'] } }),
     ],
     server: { port: 5173, strictPort: false },
     build: { target: 'es2022', chunkSizeWarningLimit: 1500 },
