@@ -26,6 +26,26 @@ export default function SessionView({ patient, onSaved }: Props) {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [simPeak, setSimPeak] = useState(0);
+  const watchTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (watchTimer.current) window.clearTimeout(watchTimer.current); }, []);
+
+  // On Informer the triage agent runs asynchronously after `session.completed`;
+  // poll the audit log for this session's run so the card fills in as it lands.
+  const watchTriage = (out: Outcome) => {
+    const deadline = Date.now() + 60_000;
+    const tick = async () => {
+      const runs = await api.agentRuns({ sessionId: out.sessionId, limit: 3 }).catch(() => []);
+      const done = runs.find((r) => r.steps.some((s) => s.toolCalls?.some((c) => c.name === 'write_progress_note')));
+      if (done) {
+        setOutcome({ ...out, agent: { agent: done.agent, trigger: done.trigger_event, status: done.status, steps: done.steps, mode: 'Informer AI', summary: done.summary || undefined } });
+        onSaved();
+        return;
+      }
+      if (Date.now() < deadline) watchTimer.current = window.setTimeout(tick, 2500);
+      else setOutcome({ ...out, agentError: 'The triage agent has not reported yet; its note and any alert will appear in the chart when it finishes.' });
+    };
+    watchTimer.current = window.setTimeout(tick, 2500);
+  };
 
   useEffect(() => {
     setExercise((plan?.exercise_key as ExerciseKey) || 'shoulder_abduction');
@@ -76,6 +96,8 @@ export default function SessionView({ patient, onSaved }: Props) {
           out.agentError = (err as Error).message;
         }
         setOutcome({ ...out });
+      } else {
+        watchTriage(out);
       }
       onSaved();
     } catch (err) {
@@ -146,9 +168,9 @@ export default function SessionView({ patient, onSaved }: Props) {
             </div>
             <StatusPill status={patient.assessment.status} label={patient.assessment.statusLabel} />
           </div>
-          <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-            <label className="flex flex-col gap-1 text-xs text-mute">Exercise
-              <select className="field" value={exercise} disabled={running} onChange={(e) => setExercise(e.target.value as ExerciseKey)}>
+          <div className="mt-3 grid grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 text-sm">
+            <label className="flex min-w-0 flex-col gap-1 text-xs text-mute">Exercise
+              <select className="field min-w-0" value={exercise} disabled={running} onChange={(e) => setExercise(e.target.value as ExerciseKey)}>
                 {Object.values(EXERCISE_SPECS).map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
               </select>
             </label>
@@ -261,15 +283,15 @@ function OutcomeCard({ outcome }: { outcome: Outcome }) {
       </ul>
       {outcome.agent ? (
         <div className="mt-3 space-y-1.5 text-xs">
-          <div className="text-mute">Agent ran {calls.length} tool calls in {outcome.agent.durationMs ?? '—'} ms ({outcome.agent.mode === 'llm' ? 'Claude' : 'deterministic plan'})</div>
+          <div className="text-mute">Agent ran {calls.length} tool calls{outcome.agent.durationMs ? ` in ${outcome.agent.durationMs} ms` : ''} ({outcome.agent.mode === 'llm' ? 'Claude' : outcome.agent.mode === 'fallback' ? 'deterministic plan' : 'Informer AI'})</div>
           {alert && <div className="rounded-md bg-coral/15 px-2 py-1 text-coral">Alert raised: {String((alert.args as { title?: string }).title)}</div>}
           {plan && <div className="rounded-md bg-teal/15 px-2 py-1 text-teal">Plan progressed: {JSON.stringify((plan.result as { change?: unknown }).change)}</div>}
           {note && <div className="rounded-md bg-ink-800 px-2 py-1 text-paper/80">Progress note written to the chart.</div>}
         </div>
       ) : outcome.agentError ? (
-        <p className="mt-2 text-xs text-coral">Agent trigger failed: {outcome.agentError}</p>
+        <p className="mt-2 text-xs text-coral">{outcome.agentError}</p>
       ) : (
-        <p className="mt-2 text-xs text-mute">Informer will run the rehab_triage agent on this session.</p>
+        <p className="mt-2 flex items-center gap-2 text-xs text-mute"><span className="live-dot" aria-hidden /> Informer is running the rehab_triage agent on this session…</p>
       )}
     </div>
   );

@@ -7,6 +7,29 @@ description: >
   workspace, where clinicians get longitudinal analytics and AI triage agents
   turn each session into actionable interventions.
 
+# Public serving and the app's own sign-up need Informer 2026.2.0 (origin mode).
+requires:
+  informer: '>=2026.2.0'
+
+# The host page and assets serve anonymously; every server/ route still needs a
+# session. Visitors create an account on the app itself (demo workspace with
+# synthetic patients, so new accounts get the clinician role) or use
+# "Sign in with Informer" for tenant users, whose roles come from Sharing.
+public: true
+accounts:
+  issuers:
+    local:
+      signup: open
+      defaultRole: clinician
+
+# Platform APIs the app's own server routes may call (owner-backed): the agent
+# console's "Run now" goes through Informer's agent API. The AI model routes
+# are granted automatically.
+access:
+  apis:
+    - GET /api/apps/*/agents
+    - POST /api/apps/*/agents/*/_trigger
+
 # Custom roles. Read client-side via window.__INFORMER__.roles and enforced
 # server-side in server/ handlers (request.roles) and route `config.roles`.
 roles:

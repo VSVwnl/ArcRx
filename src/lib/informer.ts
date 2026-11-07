@@ -14,14 +14,17 @@ declare global {
   }
 }
 
+// Public pages on Informer may render with no injected context (anonymous
+// visitor); the session probe (/api/me) is the source of truth for who is
+// signed in and with which roles. This fallback is deliberately empty.
 export function informer(): InformerContext {
   return (
     window.__INFORMER__ || {
-      report: { id: 'standalone', name: 'ArcRx' },
+      report: { id: 'public', name: 'ArcRx' },
       theme: 'dark',
-      roles: ['clinician', 'patient'],
-      user: { username: 'guest', displayName: 'Guest' },
-      platform: { version: 'standalone', capabilities: {} },
+      roles: [],
+      user: { username: '', displayName: '' },
+      platform: { version: 'public', capabilities: {} },
     }
   );
 }

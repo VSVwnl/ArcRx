@@ -1,5 +1,5 @@
-// Typed client for the app's own server routes (server/ → /api/_server/…)
-// and the dev-only agent trigger surface (/api/_agent/…).
+// Typed client for the app's own server routes (server/ → /api/<path>, as on
+// Informer) and the dev-only agent trigger surface (/api/_agent/…).
 import type { RepResult } from '../cv/types';
 import { isDevPlatform } from './informer';
 
@@ -7,23 +7,26 @@ export type Role = 'patient' | 'clinician';
 let currentRole: Role = 'clinician';
 export const setApiRole = (r: Role) => (currentRole = r);
 
+export class ApiError extends Error { constructor(public status: number, message: string) { super(message); } }
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   // In dev the mirror honours a demo-only `__role` so the UI can switch views;
   // in production roles come from Informer and this parameter is ignored.
   const sep = path.includes('?') ? '&' : '?';
-  const url = isDevPlatform() ? `${path}${sep}__role=${currentRole}` : path;
+  const url = isDevPlatform() && !path.startsWith('/api/me') ? `${path}${sep}__role=${currentRole}` : path;
   const res = await fetch(url, {
     method,
     headers: body ? { 'content-type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (res.status === 204) return undefined as T;
+  if (res.status === 401) throw new ApiError(401, 'Not signed in');
   const text = await res.text();
   let data: unknown = text;
   try { data = JSON.parse(text); } catch { /* plain text */ }
   if (!res.ok) {
     const msg = (data as { message?: string; error?: string })?.message || (data as { error?: string })?.error || `${res.status} ${res.statusText}`;
-    throw new Error(msg);
+    throw new ApiError(res.status, msg);
   }
   return data as T;
 }
@@ -76,21 +79,38 @@ export interface AskResult {
 export interface AgentInfo { name: string; description: string | null; model: string; tools: string[]; on: string | string[]; cron: string | null; mode?: 'llm' | 'fallback' }
 export interface AgentStep { type: 'text' | 'tool_call'; text?: string; toolCalls?: Array<{ name: string; args: Record<string, unknown>; result: unknown }> }
 export interface AgentRun { agent: string; trigger: string; status: string; tokens?: number; mode?: string; durationMs?: number; steps: AgentStep[]; summary?: string }
-export interface AgentRunRow { id: number; agent: string; trigger_event: string; payload: Record<string, unknown>; steps: AgentStep[]; status: string; summary: string | null; created_at: string }
+export interface AgentRunRow { id: string; agent: string; trigger_event: string; patient_id: number | null; session_id: number | null; steps: AgentStep[]; status: string; summary: string | null; created_at: string; ended_at: string }
+export interface Me { user: { id: string | null; issuer: string; name: string; username: string | null; email: string | null } | null; roles: string[]; platform: { version: string | null; originMode: boolean | null } }
 
 export const api = {
-  patients: () => call<PatientSummary[]>('GET', '/api/_server/patients'),
-  patient: (id: number) => call<PatientDetail>('GET', `/api/_server/patients/${id}`),
-  caseload: () => call<Caseload>('GET', '/api/_server/caseload'),
-  alerts: (status?: string) => call<Alert[]>('GET', `/api/_server/alerts${status ? `?status=${status}` : ''}`),
-  setAlertStatus: (id: number, status: Alert['status']) => call<Alert>('PATCH', `/api/_server/alerts/${id}`, { status }),
-  notes: (patientId?: number) => call<Note[]>('GET', `/api/_server/notes${patientId ? `?patient_id=${patientId}` : ''}`),
-  addNote: (patient_id: number, note: string) => call<Note>('POST', '/api/_server/notes', { patient_id, note }),
-  updatePlan: (id: number, patch: Partial<Plan> & { rationale?: string }) => call<Plan>('PATCH', `/api/_server/plans/${id}`, patch),
-  ask: (question: string) => call<AskResult>('POST', '/api/_server/ask', { question }),
+  patients: () => call<PatientSummary[]>('GET', '/api/patients'),
+  patient: (id: number) => call<PatientDetail>('GET', `/api/patients/${id}`),
+  caseload: () => call<Caseload>('GET', '/api/caseload'),
+  alerts: (status?: string) => call<Alert[]>('GET', `/api/alerts${status ? `?status=${status}` : ''}`),
+  setAlertStatus: (id: number, status: Alert['status']) => call<Alert>('PATCH', `/api/alerts/${id}`, { status }),
+  notes: (patientId?: number) => call<Note[]>('GET', `/api/notes${patientId ? `?patient_id=${patientId}` : ''}`),
+  addNote: (patient_id: number, note: string) => call<Note>('POST', '/api/notes', { patient_id, note }),
+  updatePlan: (id: number, patch: Partial<Plan> & { rationale?: string }) => call<Plan>('PATCH', `/api/plans/${id}`, patch),
+  ask: (question: string) => call<AskResult>('POST', '/api/ask', { question }),
   saveSession: (payload: { patient_id: number; exercise_key: string; side: string; started_at: string; ended_at: string; pain_score: number; source: string; reps: RepResult[] }) =>
-    call<{ session: Record<string, unknown> & { session_id: number }; assessment: Assessment }>('POST', '/api/_server/sessions', payload),
+    call<{ session: Record<string, unknown> & { session_id: number }; assessment: Assessment }>('POST', '/api/sessions', payload),
   agents: () => call<AgentInfo[]>('GET', '/api/_agent'),
   triggerAgent: (name: string, event: string, payload: unknown) => call<AgentRun>('POST', `/api/_agent/${name}/_trigger`, { event, payload }),
-  agentRuns: () => call<AgentRunRow[]>('GET', '/api/_server/agents/runs?limit=20'),
+  agentRuns: (opts: { limit?: number; sessionId?: number } = {}) => call<AgentRunRow[]>('GET', `/api/agents/runs?limit=${opts.limit ?? 20}${opts.sessionId ? `&session_id=${opts.sessionId}` : ''}`),
+  // Production: ask Informer to run the agent (owner-backed server route); dev servers trigger in-process.
+  triggerAgentOnPlatform: (name: string) => call<{ agent: string; trigger: string; status: string }>('POST', '/api/agents/trigger', { name }),
+  me: () => call<Me>('GET', '/api/me'),
+  logout: async () => { await fetch('/_auth/logout', { method: 'POST', credentials: 'same-origin' }); },
+  login: (email: string, password: string) => auth('/_auth/login', { email, password }),
+  signup: (email: string, password: string, name: string) => auth('/_auth/signup', { email, password, name }),
 };
+
+async function auth(path: string, body: Record<string, string>) {
+  const res = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  if (res.ok) return;
+  if (res.status === 409) throw new Error('An account with that email already exists. Sign in instead.');
+  if (res.status === 401) throw new Error('Email or password did not match.');
+  if (res.status === 403) throw new Error('Sign-up is closed on this install.');
+  if (res.status === 404) throw new Error('This install has no app sign-in; use Sign in with Informer.');
+  throw new Error(`Sign-in failed (${res.status})`);
+}

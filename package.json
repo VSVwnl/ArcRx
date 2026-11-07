@@ -5,6 +5,7 @@
   "type": "module",
   "description": "ArcRx - webcam range-of-motion rehab coach with governed clinical analytics on Informer Apps",
   "informer": {
+    "id": "be751799-c453-40fa-9a72-477375e344f5",
     "name": "ArcRx Rehab Coach",
     "description": "Browser-native computer-vision physical therapy coach with longitudinal ROM analytics and AI triage agents",
     "icon": "accessibility_new"
