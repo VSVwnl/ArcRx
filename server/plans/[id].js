@@ -2,12 +2,22 @@
 export const config = { roles: ['clinician', 'admin'] };
 
 const EDITABLE = ['target_rom', 'sets', 'reps', 'frequency_per_week', 'pain_threshold'];
+// Clinically plausible bounds; anything outside is a typo, not a prescription.
+const BOUNDS = { target_rom: [1, 180], sets: [1, 10], reps: [1, 50], frequency_per_week: [1, 14], pain_threshold: [0, 10] };
 
 export async function PATCH({ query, request, emit }) {
   const id = Number(request.params.id);
   const b = request.body || {};
   const [before] = await query('SELECT * FROM exercise_plans WHERE id = $1', [id]);
   if (!before) return { status: 404, body: { message: 'Plan not found' } };
+  for (const k of EDITABLE) {
+    if (b[k] === undefined || b[k] === null) continue;
+    const v = Number(b[k]);
+    const [lo, hi] = BOUNDS[k];
+    if (!Number.isFinite(v) || v < lo || v > hi || (k !== 'target_rom' && !Number.isInteger(v))) {
+      return { status: 400, body: { message: `${k} must be ${k === 'target_rom' ? 'a number' : 'a whole number'} between ${lo} and ${hi}` } };
+    }
+  }
   const sets = [];
   const params = [id];
   const change = {};

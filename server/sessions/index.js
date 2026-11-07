@@ -24,6 +24,11 @@ export async function POST({ query, request, platform, emit, transaction, log })
   if (!EXERCISES[b.exercise_key]) return { status: 400, body: { message: 'Unknown exercise_key' } };
   if (b.side && !['left', 'right'].includes(b.side)) return { status: 400, body: { message: 'side must be left or right' } };
   if (b.source && !['webcam', 'simulation'].includes(b.source)) return { status: 400, body: { message: 'source must be webcam or simulation' } };
+  for (const k of ['started_at', 'ended_at']) {
+    if (b[k] != null && Number.isNaN(Date.parse(b[k]))) return { status: 400, body: { message: `${k} must be an ISO timestamp` } };
+  }
+  const endedAt = b.ended_at || new Date().toISOString();
+  const startedAt = b.started_at || endedAt;
   const pain = Math.max(0, Math.min(10, Math.round(Number(b.pain_score || 0))));
   const allowedFlags = new Set(EXERCISES[b.exercise_key].compensations);
   for (const r of b.reps) {
@@ -43,7 +48,7 @@ export async function POST({ query, request, platform, emit, transaction, log })
     const [session] = await q(
       `INSERT INTO sessions (patient_id, plan_id, exercise_key, side, started_at, ended_at, reps, peak_rom, mean_rom, smoothness, compensation_pct, pain_score, source)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-      [patientId, plan?.id ?? null, b.exercise_key, b.side || plan?.side || 'right', b.started_at, b.ended_at || new Date().toISOString(),
+      [patientId, plan?.id ?? null, b.exercise_key, b.side || plan?.side || 'right', startedAt, endedAt,
         b.reps.length, peak.toFixed(1), meanRom.toFixed(1), smooth.toFixed(1), compPct.toFixed(1), pain, b.source || 'webcam'],
     );
     for (const [i, r] of b.reps.entries()) {

@@ -12,6 +12,7 @@ export default function PatientDetailView({ patientId, onBack, refresh, version 
   const [note, setNote] = useState('');
   const [target, setTarget] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
 
   useEffect(() => {
     api.patient(patientId).then((x) => { setD(x); setTarget(x.plan?.target_rom ?? null); }).catch(() => {});
@@ -34,9 +35,12 @@ export default function PatientDetailView({ patientId, onBack, refresh, version 
   const savePlan = async () => {
     if (!d.plan || target == null) return;
     setBusy(true);
+    setPlanError(null);
     try {
       await api.updatePlan(d.plan.id, { target_rom: target, rationale: 'Clinician adjustment from the chart' });
       refresh();
+    } catch (err) {
+      setPlanError((err as Error).message);
     } finally { setBusy(false); }
   };
   const saveNote = async () => {
@@ -123,9 +127,10 @@ export default function PatientDetailView({ patientId, onBack, refresh, version 
                 <div className="flex justify-between"><span className="text-mute">Exercise</span><span>{spec?.label} · {d.plan.side}</span></div>
                 <div className="flex justify-between"><span className="text-mute">Dose</span><span>{d.plan.sets} × {d.plan.reps} · {d.plan.frequency_per_week}/week</span></div>
                 <label className="flex items-center justify-between gap-2"><span className="text-mute">Target ROM</span>
-                  <span className="flex items-center gap-2"><input className="field w-20" type="number" value={target ?? ''} onChange={(e) => setTarget(Number(e.target.value))} /><span>°</span>
+                  <span className="flex items-center gap-2"><input className="field w-20" type="number" min={1} max={180} value={target ?? ''} onChange={(e) => setTarget(Number(e.target.value))} /><span>°</span>
                     <button className="btn px-2 py-1 text-xs" disabled={busy || target === d.plan.target_rom} onClick={savePlan}>Save</button></span>
                 </label>
+                {planError && <div role="alert" className="text-xs text-coral">{planError}</div>}
                 {d.planChanges.slice(0, 3).map((c) => (
                   <div key={c.id} className="rounded-md bg-ink-800/60 p-2 text-xs">
                     <div className="text-violet">{c.created_by} · {timeAgo(c.created_at)}</div>
