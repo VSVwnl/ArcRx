@@ -46,12 +46,12 @@ measured with a hand-held goniometer a few times a month. Nobody sees the other 
   read-only SQL query (when Informer AI or a key is available) or by a deterministic intent router
   over the same tables, scoped to the asker's role.
 
-## What the judges will see (3 minutes)
+## Demo
 
-See [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md). Live camera → goniometer arc at the shoulder →
+Live camera → goniometer arc at the shoulder →
 compensation caught on a rep → session saved → agent raises an alert and writes the note →
 clinician dashboard, longitudinal chart, ask-your-data, agent audit log. A one-click **Demo
-Simulation** drives the identical pipeline with a virtual patient if lighting or Wi-Fi fail.
+Simulation** drives the identical pipeline with a virtual patient when no camera is available.
 
 ## Tech stack
 
@@ -61,7 +61,7 @@ Simulation** drives the identical pipeline with a virtual patient if lighting or
 | Computer vision | `@mediapipe/tasks-vision` Pose Landmarker (lite) + Face Landmarker, GPU delegate with CPU fallback | Browser-native, ~10 MB of models served from `public/`, zero network |
 | Signal processing | One Euro filter, calibration windows, rep state machine | Stable angles without lag; clinically meaningful rep boundaries |
 | App platform | **Entrinsik Informer Apps** (`@entrinsik/vite-plugin-informer` 2.14) | Roles, private Postgres workspace, sandboxed server routes, events, agents, deploy pipeline |
-| Offline mirror | PGlite (Postgres in WASM) + the same handler contract | Judging-day resilience: `npm run dev` works with no Informer instance and no Wi-Fi |
+| Offline mirror | PGlite (Postgres in WASM) + the same handler contract | `npm run dev` works with no Informer instance and no network |
 | LLM (optional) | Informer AI (`go_everyday` / `go_advanced`) in production; Anthropic SDK (`claude-opus-5-5`) in the local mirror | Agents and NL→SQL; a deterministic plan runs when no model is reachable |
 
 ## Informer Apps architecture
@@ -105,14 +105,13 @@ subscribes `rehab_triage` with `on: session.completed`. Tools emit `alert.create
 ## Challenges
 
 - **The official dev plugin needs a live Informer.** It only mounts routes, `query()` and
-  agents when `INFORMER_URL` is set. For a hackathon demo that cannot depend on conference
-  Wi-Fi we wrote a drop-in mirror of its dev server (same `/api/_server`, `/api/_agent`,
+  agents when `INFORMER_URL` is set. So the app can run anywhere, we wrote a drop-in mirror of its dev server (same `/api/_server`, `/api/_agent`,
   `/api/models` surfaces, same handler bag, same `window.__INFORMER__` injection) backed by
   PGlite, so the exact `server/`, `tools/` and `migrations/` files run offline and deploy
   unchanged.
 - **Agents without a model.** Each agent ships a declarative fallback plan (a tiny `when` /
   `forEach` / template DSL) that the mirror executes with the real tool handlers. The LLM loop
-  and the plan call the same tools, so what judges see offline is what Informer AI does online.
+  and the plan call the same tools, so the offline behaviour matches what Informer AI does online.
 - **Angles that mean something.** Raw landmark angles jitter and depend on where the patient
   stands. Calibrating to the patient's own neutral pose, a One Euro filter and a rep state
   machine with a minimum range and return threshold made counts and peaks repeatable.
@@ -138,18 +137,6 @@ subscribes `rehab_triage` with `on: session.completed`. Tools emit `alert.create
 Real patient identities via Informer SSO (the `patients.username` mapping is already there),
 live channels to push agent alerts into the clinic view, bilateral comparison, and clinician
 protocol templates per surgery type.
-
-## Judging-day checklist (60 seconds)
-
-1. `npm run dev` → console shows `[arcrx-local] workspace ready … (4 patients)`.
-2. Open http://localhost:5173 → Exercise tab shows the prescription card for the selected patient.
-3. Click **Start camera**, allow the camera, hold still 1.5 s, raise the arm: the amber arc tracks
-   the shoulder and the big numeral follows. If anything is off, **Demo simulation**.
-4. Complete 3 reps, lean once → a rep row shows *Trunk lean*. Click **Finish & save session** →
-   the purple card says *Session saved · triage agent* with the alert/note lines.
-5. Clinic tab → the new alert is in the queue; click the patient → chart shows today's point.
-6. Ask tab → *Who regressed this week?* answers with Priya.
-7. Agents tab → **Run now** on `weekly_caseload_report` → tool calls listed, Tomás flagged.
 
 ## Configuration
 

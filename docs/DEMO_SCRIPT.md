@@ -18,3 +18,14 @@ Fallbacks
 - Camera denied / dark room → **Demo simulation** (same pipeline, scripted compensation every 3rd rep; slider changes how far the virtual patient reaches).
 - Presenter too close for shoulder tracking → switch exercise to **Cervical rotation** (face model works seated at the keyboard).
 - Projector too small → the numeral in the right column mirrors the on-video gauge.
+
+Pre-demo checklist (60 seconds)
+1. `npm run dev` → console shows `[arcrx-local] workspace ready … (4 patients)`.
+2. Open http://localhost:5173 → Exercise tab shows the prescription card for the selected patient.
+3. Click **Start camera**, allow the camera, hold still 1.5 s, raise the arm: the amber arc tracks
+   the shoulder and the big numeral follows. If anything is off, **Demo simulation**.
+4. Complete 3 reps, lean once → a rep row shows *Trunk lean*. Click **Finish & save session** →
+   the purple card says *Session saved · triage agent* with the alert/note lines.
+5. Clinic tab → the new alert is in the queue; click the patient → chart shows today's point.
+6. Ask tab → *Who regressed this week?* answers with Priya.
+7. Agents tab → **Run now** on `weekly_caseload_report` → tool calls listed, Tomás flagged.
