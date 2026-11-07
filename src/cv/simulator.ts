@@ -81,7 +81,7 @@ export function simulate(cfg: SimConfig, tMs: number): SimFrame {
       const ex = S.x + sign * Math.sin(driftRad) * upper;
       const ey = S.y + Math.cos(driftRad) * upper;
       set(eIdx, ex, ey);
-      const foreAngle = driftRad + Math.PI - rad; // 0° flexion = forearm continues down
+      const foreAngle = driftRad + rad; // 0° flexion = forearm continues straight down; 180° = hand at the shoulder
       set(wIdx, ex + sign * Math.sin(foreAngle) * fore, ey + Math.cos(foreAngle) * fore);
     }
     // the other arm rests at the side
