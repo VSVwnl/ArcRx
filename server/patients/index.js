@@ -1,15 +1,18 @@
 // GET /api/_server/patients — caseload with each patient's active plan and trajectory assessment.
-import { assessProgress, resolvePatientScope, scopeClause } from '../../lib/rehab.js';
+import { assessProgress, resolvePatientScope } from '../../lib/rehab.js';
 
 export async function GET({ query, request, platform }) {
   const scope = await resolvePatientScope({ query, request, platform });
   const params = [];
+  // patients is keyed by id; scopeClause targets tables that carry a patient_id column.
+  let where = '';
+  if (!scope.all) { params.push(scope.patientId); where = ` AND p.id = $${params.length}`; }
   const patients = await query(
     `SELECT p.*, ep.id AS plan_id, ep.exercise_key, ep.side, ep.target_rom, ep.sets, ep.reps AS plan_reps,
             ep.frequency_per_week, ep.pain_threshold
        FROM patients p
        LEFT JOIN exercise_plans ep ON ep.patient_id = p.id AND ep.active = TRUE
-      WHERE 1 = 1${scopeClause(scope, 'p', params)}
+      WHERE 1 = 1${where}
       ORDER BY p.name`,
     params,
   );
