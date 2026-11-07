@@ -11,7 +11,14 @@ export const config = { roles: ['clinician', 'admin'] };
 const PER_APP_PER_MINUTE = 3;
 const PER_USER_SECONDS = 20;
 
-export async function POST({ fetch, query, request, log }) {
+const RESERVE_SQL = `INSERT INTO agent_triggers (agent, requested_by)
+     SELECT $1, $2
+      WHERE (SELECT COUNT(*) FROM agent_triggers WHERE created_at > NOW() - INTERVAL '60 seconds') < $3
+        AND NOT EXISTS (SELECT 1 FROM agent_triggers WHERE requested_by = $2 AND created_at > NOW() - make_interval(secs => $4))
+     RETURNING id`;
+const LOCK_KEY = 731200117; // app-wide advisory lock for the reservation
+
+export async function POST({ fetch, query, transaction, request, log }) {
   const name = String(request.body?.name || '');
   if (!/^[a-z0-9_]{1,64}$/i.test(name)) return { status: 400, body: { message: 'name is required' } };
   const appId = request.app?.id;
@@ -20,16 +27,14 @@ export async function POST({ fetch, query, request, log }) {
   const who = request.user?.id || request.user?.username || request.user?.email;
   if (!who) return { status: 401, body: { message: 'Sign in to run an agent.' } };
 
-  // Reserve the slot atomically: the row is inserted only while both limits
-  // hold, in one statement, so concurrent requests cannot all pass the check.
-  const reserved = await query(
-    `INSERT INTO agent_triggers (agent, requested_by)
-     SELECT $1, $2
-      WHERE (SELECT COUNT(*) FROM agent_triggers WHERE created_at > NOW() - INTERVAL '60 seconds') < $3
-        AND NOT EXISTS (SELECT 1 FROM agent_triggers WHERE requested_by = $2 AND created_at > NOW() - make_interval(secs => $4))
-     RETURNING id`,
-    [name, String(who), PER_APP_PER_MINUTE, PER_USER_SECONDS],
-  );
+  // Reserve the slot under an app-wide advisory lock so concurrent requests are
+  // serialized: the row is inserted only while both limits hold. The official
+  // dev plugin has no transaction(); there the single statement is the best
+  // available and nothing is queued anyway (no platform agents in dev).
+  const params = [name, String(who), PER_APP_PER_MINUTE, PER_USER_SECONDS];
+  const reserved = typeof transaction === 'function'
+    ? await transaction(async ({ query: q }) => { await q('SELECT pg_advisory_xact_lock($1)', [LOCK_KEY]); return q(RESERVE_SQL, params); })
+    : await query(RESERVE_SQL, params);
   if (!reserved.length) return { status: 429, body: { message: `Manual runs are limited to ${PER_APP_PER_MINUTE} per minute and one per ${PER_USER_SECONDS} s per person; the agents keep running on their events and schedule.` } };
   const release = () => query('DELETE FROM agent_triggers WHERE id = $1', [reserved[0].id]).catch(() => {});
 
