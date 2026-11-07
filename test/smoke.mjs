@@ -95,6 +95,26 @@ for (const [f, m, opts] of [['server/caseload/index.js', 'GET', {}], ['server/ag
   ok(`patient blocked from ${m} ${f.replace('server/', '')}`, r.status === 403, `status ${r.status}`);
 }
 
+section('Manual agent trigger (rate limit reserves atomically)');
+{
+  const trig = await imp('server/agents/trigger.js');
+  const fetchStub = async () => ({ status: 404, body: {} }); // no platform in the harness
+  const mk = (user) => ({ ...base(), fetch: fetchStub, request: { method: 'POST', params: {}, query: {}, body: { name: 'rehab_triage' }, headers: {}, roles: ['clinician'], user, app: { id: 'app-1' } } });
+  r = await trig.POST(mk(null));
+  ok('trigger without identity → 401', r.status === 401, `status ${r.status}`);
+  r = await trig.POST(mk({ id: 'u1' }));
+  ok('trigger with no platform → 503 and slot released', r.status === 503, `status ${r.status}`);
+  const n0 = (await query('SELECT count(*)::int n FROM agent_triggers'))[0].n;
+  ok('released reservation leaves no row', n0 === 0, `rows ${n0}`);
+  await query(`INSERT INTO agent_triggers (agent, requested_by) VALUES ('x','u1')`);
+  r = await trig.POST(mk({ id: 'u1' }));
+  ok('same person within 20 s → 429', r.status === 429, `status ${r.status}`);
+  await query(`INSERT INTO agent_triggers (agent, requested_by) VALUES ('x','u2'), ('x','u3')`);
+  r = await trig.POST(mk({ id: 'u4' }));
+  ok('fourth run in a minute → 429', r.status === 429, `status ${r.status}`);
+  await query('DELETE FROM agent_triggers');
+}
+
 // ---------- session write path ----------
 section('Session validation');
 const goodReps = Array.from({ length: 5 }, (_, i) => ({ rep_index: i + 1, peak_angle: 120 + i, duration_ms: 3000, hold_ms: 400, smoothness: 80, compensation_flags: i === 2 ? ['trunk_lean'] : [] }));
