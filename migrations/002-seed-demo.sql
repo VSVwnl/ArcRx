@@ -1043,6 +1043,25 @@ INSERT INTO progress_notes (id, patient_id, session_id, author, note, metrics, c
 INSERT INTO progress_notes (id, patient_id, session_id, author, note, metrics, created_at) VALUES (8, 4, 184, 'dr.okafor', 'Objective: shoulder abduction left, peak 65° vs target 120°, 8 reps, smoothness 68/100, compensation 14% of reps. Assessment: progressing as expected. Plan: continue current prescription.', '{"peak_rom":65.3,"reps":8}'::jsonb, '2026-10-10T16:46:00.000Z') ON CONFLICT (id) DO NOTHING;
 INSERT INTO progress_notes (id, patient_id, session_id, author, note, metrics, created_at) VALUES (9, 4, 195, 'dr.okafor', 'Objective: shoulder abduction left, peak 78° vs target 120°, 9 reps, smoothness 73/100, compensation 25% of reps. Assessment: progressing as expected. Plan: continue current prescription.', '{"peak_rom":77.7,"reps":9}'::jsonb, '2026-10-24T18:24:00.000Z') ON CONFLICT (id) DO NOTHING;
 INSERT INTO alerts (id, patient_id, session_id, severity, kind, title, body, status, created_by, created_at, acknowledged_at) VALUES (1, 1, 101, 'medium', 'compensation', 'Shoulder hike on 38% of reps', 'Early sessions showed consistent scapular elevation during abduction; re-cued at visit.', 'resolved', 'agent:rehab_triage', '2026-10-02T13:44:00.000Z', '2026-10-03T13:14:00.000Z') ON CONFLICT (id) DO NOTHING;
+UPDATE sessions SET started_at = started_at + (CURRENT_DATE - DATE '2026-11-07') * INTERVAL '1 day', ended_at = ended_at + (CURRENT_DATE - DATE '2026-11-07') * INTERVAL '1 day';
+UPDATE progress_notes SET created_at = created_at + (CURRENT_DATE - DATE '2026-11-07') * INTERVAL '1 day';
+UPDATE alerts SET created_at = created_at + (CURRENT_DATE - DATE '2026-11-07') * INTERVAL '1 day', acknowledged_at = acknowledged_at + (CURRENT_DATE - DATE '2026-11-07') * INTERVAL '1 day';
+UPDATE patients SET surgery_date = surgery_date + (CURRENT_DATE - DATE '2026-11-07') WHERE surgery_date IS NOT NULL;
+INSERT INTO alerts (id, patient_id, session_id, severity, kind, title, body, status, created_by, created_at)
+SELECT 2, s.patient_id, s.id, 'high', 'regression',
+  'Peak ROM regressed to ' || ROUND(s.peak_rom) || '° (' || ROUND(s.peak_rom / ep.target_rom * 100) || '% of target)',
+  'Trajectory assessment flagged regression; latest pain ' || s.pain_score || '/10. Suggested: clinician review within 48h; hold progression; confirm a pain-free arc before the next session.',
+  'open', 'agent:rehab_triage', s.ended_at + INTERVAL '20 seconds'
+FROM sessions s JOIN exercise_plans ep ON ep.patient_id = s.patient_id AND ep.active = TRUE
+WHERE s.patient_id = 3 ORDER BY s.started_at DESC LIMIT 1
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO progress_notes (id, patient_id, session_id, author, note, metrics, created_at)
+SELECT (SELECT COALESCE(MAX(id), 0) + 1 FROM progress_notes), s.patient_id, s.id, 'agent:rehab_triage',
+  'Objective: ' || ROUND(s.peak_rom) || '° peak vs target ' || ROUND(ep.target_rom) || '°, ' || s.reps || ' reps, smoothness ' || ROUND(s.smoothness) || '/100, compensation ' || ROUND(s.compensation_pct) || '% of reps, pain ' || s.pain_score || '/10. Assessment: regression. Plan: hold progression; clinician review within 48h.',
+  jsonb_build_object('peak_rom', s.peak_rom, 'reps', s.reps, 'pain', s.pain_score),
+  s.ended_at + INTERVAL '25 seconds'
+FROM sessions s JOIN exercise_plans ep ON ep.patient_id = s.patient_id AND ep.active = TRUE
+WHERE s.patient_id = 3 ORDER BY s.started_at DESC LIMIT 1;
 SELECT setval('patients_id_seq', (SELECT MAX(id) FROM patients));
 SELECT setval('exercise_plans_id_seq', (SELECT MAX(id) FROM exercise_plans));
 SELECT setval('sessions_id_seq', (SELECT MAX(id) FROM sessions));

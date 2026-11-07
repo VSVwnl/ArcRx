@@ -116,6 +116,34 @@ for (const n of noteRows) {
 // A resolved historical alert so the alert list shows the lifecycle
 lines.push(`INSERT INTO alerts (id, patient_id, session_id, severity, kind, title, body, status, created_by, created_at, acknowledged_at) VALUES (1, 1, 101, 'medium', 'compensation', 'Shoulder hike on 38% of reps', 'Early sessions showed consistent scapular elevation during abduction; re-cued at visit.', 'resolved', 'agent:rehab_triage', ${q(iso(day(36)))}, ${q(iso(day(35)))}) ON CONFLICT (id) DO NOTHING;`);
 
+// Dates above are anchored to the day the seed was authored. Shift them so the data always
+// ends "yesterday" relative to the day the migration runs (a fresh workspace or deploy),
+// keeping the plateau / regression / ready / non-adherent trajectories true over time.
+const SHIFT = `(CURRENT_DATE - DATE '${TODAY.toISOString().slice(0, 10)}') * INTERVAL '1 day'`;
+lines.push(`UPDATE sessions SET started_at = started_at + ${SHIFT}, ended_at = ended_at + ${SHIFT};`);
+lines.push(`UPDATE progress_notes SET created_at = created_at + ${SHIFT};`);
+lines.push(`UPDATE alerts SET created_at = created_at + ${SHIFT}, acknowledged_at = acknowledged_at + ${SHIFT};`);
+lines.push(`UPDATE patients SET surgery_date = surgery_date + (CURRENT_DATE - DATE '${TODAY.toISOString().slice(0, 10)}') WHERE surgery_date IS NOT NULL;`);
+
+// What the triage agent would already have done for the regression case (Priya, id 3): an open
+// high-severity alert and an objective note, derived from her latest seeded session so the
+// clinic queue and chart have agent output before anyone runs a live session.
+lines.push(`INSERT INTO alerts (id, patient_id, session_id, severity, kind, title, body, status, created_by, created_at)
+SELECT 2, s.patient_id, s.id, 'high', 'regression',
+  'Peak ROM regressed to ' || ROUND(s.peak_rom) || '° (' || ROUND(s.peak_rom / ep.target_rom * 100) || '% of target)',
+  'Trajectory assessment flagged regression; latest pain ' || s.pain_score || '/10. Suggested: clinician review within 48h; hold progression; confirm a pain-free arc before the next session.',
+  'open', 'agent:rehab_triage', s.ended_at + INTERVAL '20 seconds'
+FROM sessions s JOIN exercise_plans ep ON ep.patient_id = s.patient_id AND ep.active = TRUE
+WHERE s.patient_id = 3 ORDER BY s.started_at DESC LIMIT 1
+ON CONFLICT (id) DO NOTHING;`);
+lines.push(`INSERT INTO progress_notes (id, patient_id, session_id, author, note, metrics, created_at)
+SELECT (SELECT COALESCE(MAX(id), 0) + 1 FROM progress_notes), s.patient_id, s.id, 'agent:rehab_triage',
+  'Objective: ' || ROUND(s.peak_rom) || '° peak vs target ' || ROUND(ep.target_rom) || '°, ' || s.reps || ' reps, smoothness ' || ROUND(s.smoothness) || '/100, compensation ' || ROUND(s.compensation_pct) || '% of reps, pain ' || s.pain_score || '/10. Assessment: regression. Plan: hold progression; clinician review within 48h.',
+  jsonb_build_object('peak_rom', s.peak_rom, 'reps', s.reps, 'pain', s.pain_score),
+  s.ended_at + INTERVAL '25 seconds'
+FROM sessions s JOIN exercise_plans ep ON ep.patient_id = s.patient_id AND ep.active = TRUE
+WHERE s.patient_id = 3 ORDER BY s.started_at DESC LIMIT 1;`);
+
 for (const t of ['patients', 'exercise_plans', 'sessions', 'reps', 'progress_notes', 'alerts']) {
   lines.push(`SELECT setval('${t}_id_seq', (SELECT MAX(id) FROM ${t}));`);
 }
