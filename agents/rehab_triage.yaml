@@ -74,8 +74,8 @@ fallback:
       when: { path: assessment.status, in: [plateau, ready_to_progress] }
       args:
         patient_id: $payload.patient_id
-        target_rom: { add: [history.plan.target_rom, 5] }
-        reps: { add: [history.plan.reps, 1] }
+        target_rom: { add: [$history.plan.target_rom, 5] }
+        reps: { add: [$history.plan.reps, 1] }
         rationale: "Automatic progression: {assessment.reasons}"
 
     - tool: create_alert

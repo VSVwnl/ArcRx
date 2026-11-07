@@ -25,6 +25,7 @@ export async function handler({ args, query, emit, run }) {
   for (const k of EDITABLE) {
     if (args[k] == null) continue;
     let v = Number(args[k]);
+    if (!Number.isFinite(v)) return { error: `${k} must be a number, got ${JSON.stringify(args[k])}` };
     // Guard rails: an agent may only progress modestly.
     if (k === 'target_rom') v = Math.min(Number(plan.target_rom) + 10, Math.max(Number(plan.target_rom) - 10, v));
     if (k === 'reps') v = Math.min(plan.reps + 2, Math.max(plan.reps - 2, Math.round(v)));
