@@ -138,6 +138,16 @@ Real patient identities via Informer SSO (the `patients.username` mapping is alr
 live channels to push agent alerts into the clinic view, bilateral comparison, and clinician
 protocol templates per surgery type.
 
+## Tests
+
+```bash
+npm test          # 57 end-to-end checks, no network or API key, about 10 seconds (Node 22.18+)
+```
+
+The suite applies the real migrations to an in-memory Postgres (PGlite) and calls the real route
+handlers, agent tools and agent fallback plans. It covers role scoping and gates, session
+validation, both agents, prescription guard rails, the Ask routes and the read-only SQL guard.
+
 ## Configuration
 
 Copy `.env.example` to `.env`. Everything is optional:
