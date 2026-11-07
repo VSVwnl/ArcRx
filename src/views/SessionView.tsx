@@ -96,6 +96,8 @@ export default function SessionView({ patient, onSaved }: Props) {
           out.agentError = (err as Error).message;
         }
         setOutcome({ ...out });
+      } else if (saved.triage && saved.triage.steps?.length) {
+        setOutcome({ ...out, agent: saved.triage });
       } else {
         watchTriage(out);
       }
@@ -283,7 +285,7 @@ function OutcomeCard({ outcome }: { outcome: Outcome }) {
       </ul>
       {outcome.agent ? (
         <div className="mt-3 space-y-1.5 text-xs">
-          <div className="text-mute">Agent ran {calls.length} tool calls{outcome.agent.durationMs ? ` in ${outcome.agent.durationMs} ms` : ''} ({outcome.agent.mode === 'llm' ? 'Claude' : outcome.agent.mode === 'fallback' ? 'deterministic plan' : 'Informer AI'})</div>
+          <div className="text-mute">Agent ran {calls.length} tool calls{outcome.agent.durationMs ? ` in ${outcome.agent.durationMs} ms` : ''} ({outcome.agent.mode === 'llm' ? 'Claude' : outcome.agent.mode === 'fallback' || outcome.agent.mode === 'inline' ? 'deterministic protocol' : 'Informer AI'})</div>
           {alert && <div className="rounded-md bg-coral/15 px-2 py-1 text-coral">Alert raised: {String((alert.args as { title?: string }).title)}</div>}
           {plan && <div className="rounded-md bg-teal/15 px-2 py-1 text-teal">Plan progressed: {JSON.stringify((plan.result as { change?: unknown }).change)}</div>}
           {note && <div className="rounded-md bg-ink-800 px-2 py-1 text-paper/80">Progress note written to the chart.</div>}

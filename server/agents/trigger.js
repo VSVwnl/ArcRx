@@ -11,6 +11,9 @@ export const config = { roles: ['clinician', 'admin'] };
 const PER_APP_PER_MINUTE = 3;
 const PER_USER_SECONDS = 20;
 
+import { aiConfigured } from '../../lib/ai.js';
+import { runTriageForLatestSessions, runWeeklyReport } from '../../lib/triage.js';
+
 const RESERVE_SQL = `INSERT INTO agent_triggers (agent, requested_by)
      SELECT $1, $2
       WHERE (SELECT COUNT(*) FROM agent_triggers WHERE created_at > NOW() - INTERVAL '60 seconds') < $3
@@ -18,11 +21,10 @@ const RESERVE_SQL = `INSERT INTO agent_triggers (agent, requested_by)
      RETURNING id`;
 const LOCK_KEY = 731200117; // app-wide advisory lock for the reservation
 
-export async function POST({ fetch, query, transaction, request, log }) {
+export async function POST({ fetch, query, transaction, emit, notify, email, crypto, platform, request, log }) {
   const name = String(request.body?.name || '');
   if (!/^[a-z0-9_]{1,64}$/i.test(name)) return { status: 400, body: { message: 'name is required' } };
   const appId = request.app?.id;
-  if (!appId) return { status: 503, body: { message: 'Manual triggers need the Informer platform; agents still run on their events and schedule.' } };
 
   const who = request.user?.id || request.user?.username || request.user?.email;
   if (!who) return { status: 401, body: { message: 'Sign in to run an agent.' } };
@@ -38,6 +40,20 @@ export async function POST({ fetch, query, transaction, request, log }) {
   if (!reserved.length) return { status: 429, body: { message: `Manual runs are limited to ${PER_APP_PER_MINUTE} per minute and one per ${PER_USER_SECONDS} s per person; the agents keep running on their events and schedule.` } };
   const release = () => query('DELETE FROM agent_triggers WHERE id = $1', [reserved[0].id]).catch(() => {});
 
+  // No AI model on this install → run the protocol in-process (same tools, same audit rows).
+  if (!(await aiConfigured(fetch))) {
+    try {
+      const bag = { query, transaction, fetch, emit, notify, email, log, crypto, platform };
+      const run = name === 'weekly_caseload_report' ? await runWeeklyReport(bag) : name === 'rehab_triage' ? await runTriageForLatestSessions(bag) : null;
+      if (!run) { await release(); return { status: 404, body: { message: `No in-process protocol for ${name}` } }; }
+      return { agent: name, trigger: name === 'weekly_caseload_report' ? '_cron' : '_manual', ...run };
+    } catch (err) {
+      await release();
+      return { status: 500, body: { message: err?.message || 'inline run failed' } };
+    }
+  }
+
+  if (!appId) { await release(); return { status: 503, body: { message: 'Manual triggers need the Informer platform; agents still run on their events and schedule.' } }; }
   const list = await fetch(`apps/${appId}/agents`);
   if (list.status >= 300) {
     await release();

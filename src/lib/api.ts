@@ -93,12 +93,12 @@ export const api = {
   updatePlan: (id: number, patch: Partial<Plan> & { rationale?: string }) => call<Plan>('PATCH', `/api/plans/${id}`, patch),
   ask: (question: string) => call<AskResult>('POST', '/api/ask', { question }),
   saveSession: (payload: { patient_id: number; exercise_key: string; side: string; started_at: string; ended_at: string; pain_score: number; source: string; reps: RepResult[] }) =>
-    call<{ session: Record<string, unknown> & { session_id: number }; assessment: Assessment }>('POST', '/api/sessions', payload),
+    call<{ session: Record<string, unknown> & { session_id: number }; assessment: Assessment; triage?: AgentRun | null }>('POST', '/api/sessions', payload),
   agents: () => call<AgentInfo[]>('GET', '/api/_agent'),
   triggerAgent: (name: string, event: string, payload: unknown) => call<AgentRun>('POST', `/api/_agent/${name}/_trigger`, { event, payload }),
   agentRuns: (opts: { limit?: number; sessionId?: number } = {}) => call<AgentRunRow[]>('GET', `/api/agents/runs?limit=${opts.limit ?? 20}${opts.sessionId ? `&session_id=${opts.sessionId}` : ''}`),
   // Production: ask Informer to run the agent (owner-backed server route); dev servers trigger in-process.
-  triggerAgentOnPlatform: (name: string) => call<{ agent: string; trigger: string; status: string }>('POST', '/api/agents/trigger', { name }),
+  triggerAgentOnPlatform: (name: string) => call<AgentRun & { steps?: AgentStep[] }>('POST', '/api/agents/trigger', { name }),
   me: () => call<Me>('GET', '/api/me'),
   logout: async () => { await fetch('/_auth/logout', { method: 'POST', credentials: 'same-origin' }); },
   login: (email: string, password: string) => auth('/_auth/login', { email, password }),

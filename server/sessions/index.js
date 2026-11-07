@@ -1,6 +1,8 @@
 // POST /api/_server/sessions — persist a scored webcam session and emit session.completed.
 // GET  /api/_server/sessions?patient_id=…&limit=… — recent sessions.
 import { EXERCISES, assessProgress, resolvePatientScope, scopeClause } from '../../lib/rehab.js';
+import { aiConfigured } from '../../lib/ai.js';
+import { runRehabTriage } from '../../lib/triage.js';
 
 export async function GET({ query, request, platform }) {
   const scope = await resolvePatientScope({ query, request, platform });
@@ -15,7 +17,7 @@ export async function GET({ query, request, platform }) {
   return query(`SELECT s.* FROM sessions s WHERE ${where} ORDER BY s.started_at DESC LIMIT $${params.length}`, params);
 }
 
-export async function POST({ query, request, platform, emit, transaction, log }) {
+export async function POST({ query, request, platform, emit, transaction, fetch, notify, email, crypto, log }) {
   const b = request.body || {};
   const scope = await resolvePatientScope({ query, request, platform });
   const patientId = Number(b.patient_id);
@@ -81,5 +83,17 @@ export async function POST({ query, request, platform, emit, transaction, log })
   // In production Informer dispatches agents subscribed with `on: session.completed`.
   await emit('session.completed', payload);
   log('session.completed', payload);
-  return { session: payload, assessment };
+
+  // No AI model on this install → Informer's agent runner has nothing to call,
+  // so run the same triage protocol in-process with the same tools (and the
+  // same audit rows). The dev servers trigger the agent from the page instead.
+  let triage = null;
+  if (platform?.version !== 'dev' && !(await aiConfigured(fetch))) {
+    try {
+      triage = await runRehabTriage({ query, transaction, fetch, emit, notify, email, log, crypto, platform }, payload);
+    } catch (err) {
+      log('inline triage failed', { message: err?.message });
+    }
+  }
+  return { session: payload, assessment, triage };
 }

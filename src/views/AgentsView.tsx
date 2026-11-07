@@ -69,9 +69,17 @@ export default function AgentsView({ refresh }: { refresh: () => void }) {
         setBusy(null);
       } else {
         const since = new Date().toISOString();
-        await api.triggerAgentOnPlatform(name);
-        setNotice(`${name} is running on Informer…`);
-        waitForNewRun(since, name);
+        const r = await api.triggerAgentOnPlatform(name);
+        if (r.steps?.length) {
+          // Ran in-process (no AI model on this install): the result is already here.
+          setLast({ ...r, steps: r.steps, mode: 'deterministic protocol' });
+          refresh();
+          await loadRuns();
+          setBusy(null);
+        } else {
+          setNotice(`${name} is running on Informer…`);
+          waitForNewRun(since, name);
+        }
       }
     } catch (err) {
       setNotice((err as Error).message);

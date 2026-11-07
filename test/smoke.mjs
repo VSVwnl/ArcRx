@@ -102,10 +102,16 @@ section('Manual agent trigger (rate limit reserves atomically)');
   const mk = (user) => ({ ...base(), fetch: fetchStub, request: { method: 'POST', params: {}, query: {}, body: { name: 'rehab_triage' }, headers: {}, roles: ['clinician'], user, app: { id: 'app-1' } } });
   r = await trig.POST(mk(null));
   ok('trigger without identity → 401', r.status === 401, `status ${r.status}`);
-  r = await trig.POST(mk({ id: 'u1' }));
-  ok('trigger with no platform → 503 and slot released', r.status === 503, `status ${r.status}`);
+  // AI configured but the platform agent list is unavailable → 503 and the slot is released.
+  const aiOn = async (p) => (p === 'ai-budget' ? { status: 200, body: { configured: true } } : { status: 404, body: {} });
+  r = await trig.POST({ ...mk({ id: 'u0' }), fetch: aiOn });
+  ok('AI configured but agent API unavailable → 503', r.status === 503, `status ${r.status}`);
   const n0 = (await query('SELECT count(*)::int n FROM agent_triggers'))[0].n;
   ok('released reservation leaves no row', n0 === 0, `rows ${n0}`);
+  // No AI model → the protocol runs in-process and the result comes back directly.
+  r = await trig.POST(mk({ id: 'u1' }));
+  ok('no AI model → weekly/triage protocol runs inline', r.mode === 'inline' && r.status === 'completed' && r.steps?.length > 0, JSON.stringify(r).slice(0, 160));
+  await query('DELETE FROM agent_triggers');
   await query(`INSERT INTO agent_triggers (agent, requested_by) VALUES ('x','u1')`);
   r = await trig.POST(mk({ id: 'u1' }));
   ok('same person within 20 s → 429', r.status === 429, `status ${r.status}`);
@@ -165,6 +171,41 @@ for (const pid of [2, 3, 4]) {
 }
 out = await runAgent('weekly_caseload_report', {});
 ok('weekly_caseload_report flags Tomás', /Tom/.test(JSON.stringify(out.steps)), out.text.slice(0, 160));
+
+section('In-process triage when the install has no AI model');
+{
+  const { runRehabTriage, runWeeklyReport } = await imp('lib/triage.js');
+  const bag = { ...base(), fetch: async (p) => (p === 'ai-budget' ? { status: 200, body: { configured: false } } : { status: 404, body: {} }) };
+  const [s3] = await query('SELECT * FROM sessions WHERE patient_id = 3 ORDER BY started_at DESC LIMIT 1');
+  const alertsBefore = (await query('SELECT count(*)::int n FROM alerts WHERE patient_id = 3'))[0].n;
+  const out3 = await runRehabTriage(bag, { patient_id: 3, session_id: s3.id, exercise_key: s3.exercise_key, side: s3.side, reps: s3.reps, peak_rom: Number(s3.peak_rom), smoothness: Number(s3.smoothness), compensation_pct: Number(s3.compensation_pct), pain_score: s3.pain_score });
+  const names3 = out3.steps.filter((s) => s.type === 'tool_call').map((s) => s.toolCalls[0].name);
+  ok('regression patient → history, assess, high alert, note', names3.join(',') === 'get_patient_history,assess_progress,create_alert,write_progress_note', names3.join(','));
+  const alertCall = out3.steps.find((s) => s.toolCalls?.[0].name === 'create_alert').toolCalls[0];
+  ok('alert is high severity regression (deduplicated against the seeded one)', alertCall.args.severity === 'high' && alertCall.args.kind === 'regression' && alertCall.result.alert_id, JSON.stringify(alertCall.result));
+  const alertsAfter = (await query('SELECT count(*)::int n FROM alerts WHERE patient_id = 3'))[0].n;
+  ok('no duplicate open alert created', alertsAfter === alertsBefore, `${alertsBefore} → ${alertsAfter}`);
+  const audit = (await query('SELECT count(*)::int n FROM agent_activity WHERE run_key = $1', [out3.id]))[0].n;
+  ok('inline run wrote one audit row per tool call', audit === 4, `rows ${audit}`);
+  // Maya (plateau) → plan progression. Read the plan fresh: earlier sections already progressed it once.
+  const [s1] = await query('SELECT * FROM sessions WHERE patient_id = 1 ORDER BY started_at DESC LIMIT 1');
+  const [plan1] = await query('SELECT target_rom, reps FROM exercise_plans WHERE patient_id = 1 AND active');
+  const out1 = await runRehabTriage(bag, { patient_id: 1, session_id: s1.id, exercise_key: s1.exercise_key, side: s1.side, reps: s1.reps, peak_rom: Number(s1.peak_rom), smoothness: Number(s1.smoothness), compensation_pct: Number(s1.compensation_pct), pain_score: s1.pain_score });
+  const adj = out1.steps.find((s) => s.toolCalls?.[0].name === 'adjust_plan')?.toolCalls[0];
+  const [plan1b] = await query('SELECT target_rom, reps FROM exercise_plans WHERE patient_id = 1 AND active');
+  ok('plateau patient → plan progressed +5° / +1 rep', adj?.result?.changed && Number(plan1b.target_rom) === Number(plan1.target_rom) + 5 && plan1b.reps === plan1.reps + 1, JSON.stringify({ from: plan1, to: plan1b, adj: adj?.result, summary: out1.summary }));
+  const wk = await runWeeklyReport(bag);
+  ok('weekly report inline flags Tomás', /Tom/.test(JSON.stringify(wk.steps)) && /low adherence: 1/.test(wk.summary), wk.summary);
+
+  // The session route runs it itself on a non-dev platform without AI.
+  const mod = await imp('server/sessions/index.js');
+  const prodBag = { ...bag, platform: { version: '2026.2.0', originMode: true } };
+  r = await mod.POST({ ...prodBag, request: { ...reqOf('clinician', { body: { ...good, patient_id: 4 } }), method: 'POST' } });
+  const steps = r?.triage?.steps || [];
+  ok('session POST on a platform without AI returns the inline triage run', steps.some((s) => s.toolCalls?.[0].name === 'write_progress_note'), JSON.stringify(r?.triage || r).slice(0, 200));
+  r = await mod.POST({ ...prodBag, fetch: async () => ({ status: 200, body: { configured: true } }), request: { ...reqOf('clinician', { body: { ...good, patient_id: 4 } }), method: 'POST' } });
+  ok('session POST with AI configured leaves triage to Informer', r?.triage === null, JSON.stringify(r?.triage));
+}
 
 section('Plan guard rails');
 const adj = await imp('tools/adjust_plan.js');
