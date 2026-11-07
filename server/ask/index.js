@@ -8,7 +8,7 @@
 //   2. Rules: a deterministic intent router answers the common clinical
 //      questions from the same tables, so the feature works fully offline.
 // Patients always take path 2 scoped to their own record.
-import { askObject, guardReadOnlySql } from '../../lib/ai.js';
+import { askObject, guardReadOnlySql, runGovernedSql } from '../../lib/ai.js';
 import { assessProgress, EXERCISES, STATUS_LABELS, resolvePatientScope, scopeClause } from '../../lib/rehab.js';
 
 const SCHEMA_DOC = `
@@ -22,20 +22,20 @@ progress_notes(id, patient_id, session_id, author, note, metrics jsonb, created_
 plan_changes(id, patient_id, plan_id, change jsonb, rationale, created_by, created_at)
 exercise_key values: ${Object.keys(EXERCISES).join(', ')}. ROM values are degrees. "Now" is NOW().`;
 
-export async function POST({ query, request, platform, fetch, log }) {
+export async function POST({ query, transaction, request, platform, fetch, log }) {
   const question = String(request.body?.question || '').trim();
   if (!question) return { status: 400, body: { message: 'question is required' } };
   const scope = await resolvePatientScope({ query, request, platform });
   const isClinician = scope.all && !scope.devFallback ? true : (request.roles || []).includes('clinician');
 
   if (isClinician) {
-    const ai = await answerWithAi({ query, fetch, question, log });
+    const ai = await answerWithAi({ transaction, fetch, question, log });
     if (ai) return ai;
   }
   return answerWithRules({ query, question, scope });
 }
 
-async function answerWithAi({ query, fetch, question, log }) {
+async function answerWithAi({ transaction, fetch, question, log }) {
   const plan = await askObject(fetch, {
     model: 'go_everyday',
     system: `You translate a physical therapist's question into ONE read-only Postgres SELECT over this schema.${SCHEMA_DOC}
@@ -62,9 +62,9 @@ Return JSON only. Prefer joining patients for names. Use ROUND for numerics. Nev
   }
   let rows;
   try {
-    rows = await query(guard.sql);
+    rows = await runGovernedSql(transaction, guard.sql);
   } catch (err) {
-    log.warn('ask: AI SQL failed', { message: err.message });
+    log.warn('ask: governed SQL refused or failed', { message: err.message });
     return null;
   }
   const narrated = await askObject(fetch, {
