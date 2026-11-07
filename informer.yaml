@@ -32,7 +32,7 @@ accounts:
 # tenant in Admin → Environment; while unset the app accepts the demo code 2026.
 env:
   ARCRX_CLINIC_CODE:
-    description: Code required to add a patient record (demo default when unset: 2026)
+    description: "Code required to add a patient record (demo default when unset is 2026)"
 
 # Platform APIs the app's own server routes may call (owner-backed): the agent
 # console's "Run now" goes through Informer's agent API. The AI model routes

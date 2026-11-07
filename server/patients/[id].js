@@ -41,6 +41,22 @@ export async function GET({ query, request, platform }) {
   };
 }
 
+// DELETE /api/patients/:id — remove a patient and, by cascade, their plans,
+// sessions, reps, alerts, notes and plan changes. Admin only; the four seeded
+// demo patients are protected so the caseload the agents rely on survives.
+export async function DELETE({ query, request }) {
+  const roles = request.roles || [];
+  if (!roles.includes('admin')) return { status: 403, body: { message: 'Only an admin can remove a patient' } };
+  const id = Number(request.params.id);
+  if (!Number.isInteger(id) || id <= 0) return { status: 400, body: { message: 'Bad patient id' } };
+  if (id <= 4) return { status: 409, body: { message: 'The seeded demo patients cannot be removed' } };
+  const [patient] = await query('SELECT id, name FROM patients WHERE id = $1', [id]);
+  if (!patient) return { status: 404, body: { message: 'Patient not found' } };
+  await query('DELETE FROM agent_activity WHERE patient_id = $1', [id]);
+  await query('DELETE FROM patients WHERE id = $1', [id]);
+  return { status: 200, body: { removed: patient } };
+}
+
 function numericSession(s) {
   return {
     ...s,

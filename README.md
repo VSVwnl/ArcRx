@@ -47,6 +47,9 @@ measured with a hand-held goniometer a few times a month. Nobody sees the other 
   regression / low adherence), raises alerts, adjusts the plan inside guard rails (±10°, ±2 reps)
   and writes a SOAP-style note. `weekly_caseload_report` runs Monday 07:00 and flags adherence
   gaps for outreach.
+- **Add patients safely.** A clinician adds a patient with their first prescription; the form needs a
+  clinic code (`ARCRX_CLINIC_CODE` in the app's Environment, demo default `2026`), and "This is me"
+  links the record to the signed-in account so a person exercises on their own chart.
 - **Ask the data.** "Who regressed this week?" is answered either by a model-drafted, validated
   read-only SQL query (when Informer AI or a key is available) or by a deterministic intent router
   over the same tables, scoped to the asker's role.

@@ -1,7 +1,7 @@
 # ArcRx — 3-minute live demo script
 
 Live app: https://bodapati-arcrx-rehab-coach.go.informer-apps.com (Entrinsik judges open this on their
-phones; create an account there once beforehand). For the stage demo, the offline copy below is the
+phones; create an account there once beforehand). Adding a patient asks for the clinic code: 2026. For the stage demo, the offline copy below is the
 safer choice if Wi-Fi is uncertain; the two behave identically.
 
 Setup before judges arrive: `npm run dev` running, browser at http://localhost:5173, laptop

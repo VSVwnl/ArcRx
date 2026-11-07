@@ -245,6 +245,14 @@ section('Adding patients');
   const out = await runRehabTriage({ ...base(), fetch: async () => ({ status: 404, body: {} }) }, { ...r.body.session });
   const errs = out.steps.filter((s) => s.toolCalls?.[0].result?.error);
   ok('triage on a one-session patient runs clean and writes a note', errs.length === 0 && out.steps.some((s) => s.toolCalls?.[0].name === 'write_progress_note'), JSON.stringify(errs).slice(0, 160));
+
+  r = await call('server/patients/[id].js', 'DELETE', 'clinician', { params: { id: String(newId) } });
+  ok('clinician cannot delete a patient', r.status === 403, `status ${r.status}`);
+  r = await call('server/patients/[id].js', 'DELETE', 'admin', { params: { id: '3' } });
+  ok('seeded demo patients are protected from deletion', r.status === 409, `status ${r.status}`);
+  r = await call('server/patients/[id].js', 'DELETE', 'admin', { params: { id: String(newId) } });
+  const left = (await query('SELECT (SELECT count(*)::int FROM sessions WHERE patient_id=$1) s, (SELECT count(*)::int FROM progress_notes WHERE patient_id=$1) n, (SELECT count(*)::int FROM agent_activity WHERE patient_id=$1) a', [newId]))[0];
+  ok('admin delete removes the patient and everything attached', r.status === 200 && left.s === 0 && left.n === 0 && left.a === 0, JSON.stringify({ status: r.status, left }));
 }
 
 section('Plan guard rails');
