@@ -255,6 +255,26 @@ section('Adding patients');
   ok('admin delete removes the patient and everything attached', r.status === 200 && left.s === 0 && left.n === 0 && left.a === 0, JSON.stringify({ status: r.status, left }));
 }
 
+section('Idempotent session saves (client_ref)');
+{
+  const mod = await imp('server/sessions/index.js');
+  const ref = 'qa-ref-0001-abcdef';
+  const post = (body) => mod.POST({ ...base(), platform: { version: 'dev' }, request: { ...reqOf('clinician', { body }), method: 'POST' } });
+  const before = (await query('SELECT count(*)::int n FROM sessions'))[0].n;
+  const first = await post({ ...good, patient_id: 2, client_ref: ref });
+  const again = await post({ ...good, patient_id: 2, client_ref: ref });
+  const mid = (await query('SELECT count(*)::int n FROM sessions'))[0].n;
+  ok('retry with the same client_ref returns the stored session', first.session?.session_id && again.session?.session_id === first.session.session_id && again.duplicate === true, JSON.stringify({ a: first.session?.session_id, b: again.session?.session_id }));
+  ok('…and writes exactly one row', mid === before + 1, `${before} → ${mid}`);
+  const [x, y] = await Promise.all([post({ ...good, patient_id: 2, client_ref: 'qa-ref-0002-concurrent' }), post({ ...good, patient_id: 2, client_ref: 'qa-ref-0002-concurrent' })]);
+  const after = (await query('SELECT count(*)::int n FROM sessions'))[0].n;
+  ok('two concurrent saves with one client_ref → one row, same id', after === mid + 1 && x.session?.session_id === y.session?.session_id, JSON.stringify({ rows: after - mid, x: x.session?.session_id ?? x.status, y: y.session?.session_id ?? y.status }));
+  const bad = await post({ ...good, patient_id: 2, client_ref: 'x; DROP' });
+  ok('malformed client_ref → 400', bad.status === 400, `status ${bad.status}`);
+  const noRef = await post({ ...good, patient_id: 2 });
+  ok('saves without a client_ref still work', !!noRef.session?.session_id, JSON.stringify(noRef).slice(0, 80));
+}
+
 section('Plan guard rails');
 const adj = await imp('tools/adjust_plan.js');
 const [p1] = await query('SELECT * FROM exercise_plans WHERE patient_id=1 AND active');

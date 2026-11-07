@@ -15,12 +15,14 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "test": "node --no-warnings test/smoke.mjs",
+    "test": "node --no-warnings test/smoke.mjs && node --no-warnings test/cv.mjs",
     "deploy": "npm run build && informer-deploy",
     "workspace:init": "informer-workspace init",
     "workspace:migrate": "informer-workspace migrate",
     "workspace:reset": "informer-workspace reset",
-    "models:fetch": "node dev/fetch-models.mjs"
+    "models:fetch": "node dev/fetch-models.mjs",
+    "test:e2e": "node test/e2e.mjs",
+    "preview:qa": "npm run build && vite preview --port 4173 --strictPort"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.15",
@@ -39,6 +41,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.2.1",
+    "playwright-core": "^1.65.0",
     "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.6"
