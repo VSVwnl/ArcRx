@@ -138,8 +138,16 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
     platform: { version: 'dev', originMode: true, mirror: 'arcrx-local', capabilities: CAPABILITIES },
   };
 
-  let dbPromise: Promise<PGlite> | null = null;
-  const getDb = () => (dbPromise ||= openWorkspace());
+  // Cached on globalThis so a Vite config restart (which re-evaluates this
+  // plugin in the same process) reuses the open PGlite instance instead of
+  // opening the data directory twice, which aborts the WASM runtime.
+  const g = globalThis as typeof globalThis & { __arcrxDb?: Map<string, Promise<PGlite>> };
+  g.__arcrxDb ||= new Map();
+  const getDb = () => {
+    let p = g.__arcrxDb!.get(dataDir);
+    if (!p) { p = openWorkspace(); g.__arcrxDb!.set(dataDir, p); }
+    return p;
+  };
 
   async function openWorkspace(): Promise<PGlite> {
     mkdirSync(dataDir, { recursive: true });
@@ -235,12 +243,13 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
         name,
         description: mod.description || `Tool: ${name}`,
         inputSchema: mod.schema || { type: 'object', properties: {} },
-        handler: (args) => mod.handler({ args, run: { agentName: currentAgent, trigger: currentTrigger }, ...baseBag() }),
+        handler: (args) => mod.handler({ args, run: { agentName: currentAgent, runId: currentRunId, trigger: currentTrigger }, ...baseBag() }),
       });
     }
     return tools;
   }
   let currentAgent = '';
+  let currentRunId = '';
   let currentTrigger: unknown = null;
 
   async function serverRoutes(server: ViteDevServer, req: IncomingMessage, res: ServerResponse, next: () => void) {
@@ -256,12 +265,13 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
       const mod = await server.ssrLoadModule(match.route.filePath);
       const handler = mod[method];
       if (typeof handler !== 'function') return send(res, 404, { error: 'Method not found' });
-      const roles = mock.roles;
+      // Demo-only role override: the UI switches between patient/clinician views.
+      // Applied before the config.roles gate so the dev server refuses what Informer would.
+      const asRole = typeof parsed.query.__role === 'string' ? parsed.query.__role : null;
+      const roles = asRole ? [asRole] : mock.roles;
       const required = mod.config?.roles as string[] | undefined;
       if (Array.isArray(required) && required.length && !required.some((r) => roles.includes(r))) return send(res, 403, { error: 'Forbidden for your role' });
       const body = await readBody(req);
-      // Demo-only role override: the UI switches between patient/clinician views.
-      const asRole = typeof parsed.query.__role === 'string' ? parsed.query.__role : null;
       const request = {
         method,
         path: routePath,
@@ -318,6 +328,7 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
       const event = String(body.event || '_manual');
       const payload = body.payload || {};
       currentAgent = name;
+      currentRunId = `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       currentTrigger = { event, payload };
       const tools = await loadTools(server, (def.tools as string[]) || []);
       const started = Date.now();
@@ -340,10 +351,8 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
           const out = await runFallbackPlan({ plan, payload, tools: Object.fromEntries(tools.map((t) => [t.name, t.handler])), log: (l) => console.log(`[agent ${name}] ${l}`) });
           steps = out.steps; text = out.text;
         }
-        const run = { agent: name, trigger: event, status: 'completed', tokens, mode, durationMs: Date.now() - started, steps, summary: text };
-        await query('INSERT INTO agent_runs (agent, trigger_event, payload, steps, status, summary) VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6)', [
-          name, event, JSON.stringify(payload), JSON.stringify(steps), 'completed', text,
-        ]).catch((err) => console.warn('[arcrx-local] could not log agent run', err.message));
+        // The tools write their own audit rows (lib/audit.js); the console reads those.
+        const run = { id: currentRunId, agent: name, trigger: event, status: 'completed', tokens, mode, durationMs: Date.now() - started, steps, summary: text };
         return send(res, 200, run);
       } catch (err) {
         console.error('[arcrx-local agent]', err);
@@ -378,10 +387,13 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
       } catch (err) {
         console.error('[arcrx-local] workspace failed to open:', (err as Error).message);
       }
-      server.middlewares.use('/api/_server', (req, res, next) => void serverRoutes(server, req, res, next));
       server.middlewares.use('/api/_agent', (req, res, next) => void agentRoutes(server, req, res, next));
       server.middlewares.use('/api/models', (req, res, next) => void modelRoutes(req, res, next));
       server.middlewares.use('/api/_events', (_req, res) => send(res, 200, emitted.slice(-50).reverse()));
+      // App routes answer at bare /api/<path>, as on Informer (2026.1.2+ origin mode);
+      // /api/_server/<path> stays as the legacy dev spelling.
+      server.middlewares.use('/api/_server', (req, res, next) => void serverRoutes(server, req, res, next));
+      server.middlewares.use('/api', (req, res, next) => void serverRoutes(server, req, res, next));
     },
     transformIndexHtml: {
       order: 'pre',
