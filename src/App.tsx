@@ -51,10 +51,11 @@ export default function App() {
   // In the dev servers the injected mock roles decide the views; on Informer the session does.
   const roles = dev ? ctx.roles : me.roles;
   const displayName = me.user?.name || ctx.user.displayName || 'Signed in';
-  return <Shell roles={roles} displayName={displayName} canLogout={!dev && me.user?.issuer === 'local'} onLogout={async () => { await api.logout(); setMe(null); }} />;
+  const selfKey = me.user?.username || me.user?.id || me.user?.email || null;
+  return <Shell roles={roles} displayName={displayName} selfKey={selfKey} canLogout={!dev && me.user?.issuer === 'local'} onLogout={async () => { await api.logout(); setMe(null); }} />;
 }
 
-function Shell({ roles, displayName, canLogout, onLogout }: { roles: string[]; displayName: string; canLogout: boolean; onLogout: () => void }) {
+function Shell({ roles, displayName, selfKey, canLogout, onLogout }: { roles: string[]; displayName: string; selfKey: string | null; canLogout: boolean; onLogout: () => void }) {
   const ctx = informer();
   const visibleTabs = TABS.filter((t) => t.roles.some((r) => roles.includes(r)));
   const [tab, setTab] = useState<Tab>(visibleTabs[0]?.id || 'session');
@@ -103,7 +104,7 @@ function Shell({ roles, displayName, canLogout, onLogout }: { roles: string[]; d
         {error && <div className="mb-4 rounded-md border border-coral/40 bg-coral/10 px-3 py-2 text-sm text-coral">Could not reach the app workspace: {error}</div>}
         {!patients ? <Spinner label="Opening the workspace" /> : (
           <>
-            {tab === 'session' && <PatientHome patients={patients} refresh={refresh} />}
+            {tab === 'session' && <PatientHome patients={patients} refresh={refresh} selfKey={selfKey} canAdd={roles.includes('clinician') || roles.includes('admin')} />}
             {tab === 'clinic' && <ClinicianDashboard patients={patients} refresh={refresh} version={version} />}
             {tab === 'ask' && <AskView />}
             {tab === 'agents' && <AgentsView refresh={refresh} />}

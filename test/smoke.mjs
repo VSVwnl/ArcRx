@@ -209,6 +209,33 @@ section('In-process triage when the install has no AI model');
   ok('credit pool but empty model catalog → still runs triage inline', (r?.triage?.steps || []).length > 0, JSON.stringify(r?.triage).slice(0, 120));
 }
 
+section('Adding patients');
+{
+  const body = { name: 'Jordan Lee', condition: 'ACL reconstruction (L), week 3', exercise_key: 'elbow_flexion', side: 'left', target_rom: 120, reps: 12, sets: 3, frequency_per_week: 4, link_to_me: true };
+  r = await call('server/patients/index.js', 'POST', 'patient', { body });
+  ok('patient role cannot add patients', r.status === 403, `status ${r.status}`);
+  for (const [label, bad] of Object.entries({ 'short name': { ...body, name: 'J' }, 'unknown exercise': { ...body, exercise_key: 'squat' }, 'target out of range': { ...body, target_rom: 400 }, 'fractional reps': { ...body, reps: 2.5 }, 'bad date': { ...body, surgery_date: 'yesterday' } })) {
+    r = await call('server/patients/index.js', 'POST', 'clinician', { body: bad });
+    ok(`rejects ${label}`, r.status === 400, `status ${r.status}`);
+  }
+  r = await call('server/patients/index.js', 'POST', 'clinician', { body, username: 'dr.okafor' });
+  ok('clinician adds a patient linked to their account', r.status === 201 && r.body.id && r.body.plan?.exercise_key === 'elbow_flexion' && r.body.patient.username === 'dr.okafor', JSON.stringify(r.body).slice(0, 160));
+  const newId = r.body.id;
+  r = await call('server/patients/index.js', 'POST', 'clinician', { body, username: 'dr.okafor' });
+  ok('a second linked record for the same account → 409', r.status === 409, `status ${r.status}`);
+  r = await call('server/patients/index.js', 'POST', 'clinician', { body: { ...body, link_to_me: false }, username: 'dr.okafor' });
+  ok('an unlinked extra patient is fine', r.status === 201, `status ${r.status}`);
+  r = await call('server/patients/index.js', 'GET', 'clinician');
+  const added = r.body.find((p) => p.id === newId);
+  ok('new patient appears in the caseload as "no sessions yet"', added && added.assessment.status === 'no_data' && added.plan?.target_rom === 120, JSON.stringify(added?.assessment?.status));
+  r = await call('server/sessions/index.js', 'POST', 'clinician', { body: { ...good, patient_id: newId, exercise_key: 'elbow_flexion', side: 'left', reps: good.reps.map((x) => ({ ...x, peak_angle: 95 })) } });
+  ok('first session for the new patient saves', r.status === 200 && r.body.session?.session_id, `status ${r.status}`);
+  const { runRehabTriage } = await imp('lib/triage.js');
+  const out = await runRehabTriage({ ...base(), fetch: async () => ({ status: 404, body: {} }) }, { ...r.body.session });
+  const errs = out.steps.filter((s) => s.toolCalls?.[0].result?.error);
+  ok('triage on a one-session patient runs clean and writes a note', errs.length === 0 && out.steps.some((s) => s.toolCalls?.[0].name === 'write_progress_note'), JSON.stringify(errs).slice(0, 160));
+}
+
 section('Plan guard rails');
 const adj = await imp('tools/adjust_plan.js');
 const [p1] = await query('SELECT * FROM exercise_plans WHERE patient_id=1 AND active');
@@ -250,7 +277,7 @@ let threw = false;
 try { await runGovernedSql(transaction, "INSERT INTO alerts (patient_id, severity, kind, title) VALUES (1,'low','x','x')"); } catch { threw = true; }
 ok('read-only transaction refuses a write even if the guard were bypassed', threw);
 const rows = await runGovernedSql(transaction, guardReadOnlySql(accept[1]).sql);
-ok('read-only transaction returns rows for a valid query', Array.isArray(rows) && rows.length === 4, `rows ${rows?.length}`);
+ok('read-only transaction returns rows for a valid query', Array.isArray(rows) && rows.length >= 4, `rows ${rows?.length}`);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) console.log('Failed: ' + failures.join(' | '));

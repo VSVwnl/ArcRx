@@ -3,9 +3,13 @@ import { api, type PatientDetail, type PatientSummary } from '../lib/api';
 import { EXERCISE_SPECS, type ExerciseKey } from '../cv/types';
 import { fmtDate, MiniLine, Section, Spinner, Stat } from '../components/ui';
 import SessionView from './SessionView';
+import AddPatientForm from './AddPatientForm';
 
-export default function PatientHome({ patients, refresh }: { patients: PatientSummary[]; refresh: () => void }) {
-  const [patientId, setPatientId] = useState<number>(patients[0]?.id);
+export default function PatientHome({ patients, refresh, selfKey, canAdd }: { patients: PatientSummary[]; refresh: () => void; selfKey: string | null; canAdd: boolean }) {
+  // Default to the signed-in person's own record when one is linked to their account.
+  const mine = selfKey ? patients.find((p) => p.username === selfKey) : undefined;
+  const [patientId, setPatientId] = useState<number>(mine?.id ?? patients[0]?.id);
+  const [adding, setAdding] = useState(false);
   const [detail, setDetail] = useState<PatientDetail | null>(null);
   const patient = patients.find((p) => p.id === patientId) || patients[0];
 
@@ -16,7 +20,21 @@ export default function PatientHome({ patients, refresh }: { patients: PatientSu
     return () => { alive = false; };
   }, [patient?.id, patients]);
 
-  if (!patient) return <Spinner label="Loading your plan" />;
+  if (adding) {
+    return (
+      <div className="space-y-4">
+        <AddPatientForm canLink={!!selfKey && !mine} onCancel={() => setAdding(false)} onCreated={(id) => { setPatientId(id); setAdding(false); refresh(); }} />
+      </div>
+    );
+  }
+  if (!patient) {
+    return (
+      <div className="panel p-6 text-center">
+        <p className="text-sm text-mute">No patients yet.</p>
+        {canAdd && <button className="btn btn-primary mt-3" onClick={() => setAdding(true)}>Add the first patient</button>}
+      </div>
+    );
+  }
   const m = patient.assessment.metrics;
   const spec = patient.plan ? EXERCISE_SPECS[patient.plan.exercise_key as ExerciseKey] : null;
   const history = (detail?.sessions || []).slice().reverse().slice(-20).map((s) => ({ label: fmtDate(s.started_at), value: s.peak_rom }));
@@ -28,12 +46,15 @@ export default function PatientHome({ patients, refresh }: { patients: PatientSu
           <h2 className="text-xl font-semibold">Today's exercise</h2>
           <p className="text-sm text-mute">{patient.condition}{spec ? ` · ${spec.label}, ${patient.plan?.side}` : ''}</p>
         </div>
-        <label className="flex items-center gap-2 text-xs text-mute">
-          Signed in as
-          <select className="field" value={patient.id} onChange={(e) => setPatientId(Number(e.target.value))}>
-            {patients.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-xs text-mute">
+            Exercising as
+            <select className="field" value={patient.id} onChange={(e) => setPatientId(Number(e.target.value))}>
+              {patients.map((p) => <option key={p.id} value={p.id}>{p.name}{p.username && p.username === selfKey ? ' (me)' : ''}</option>)}
+            </select>
+          </label>
+          {canAdd && <button className="btn px-3 py-1.5 text-xs" onClick={() => setAdding(true)}>Add patient</button>}
+        </div>
       </div>
 
       <SessionView patient={patient} onSaved={refresh} />

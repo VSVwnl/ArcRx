@@ -45,6 +45,10 @@ export interface Assessment {
     adherence: number; sessionsLast7: number; prescribedPerWeek: number; pain: number; compensationPct: number; compensationTrend: number; smoothness: number | null;
   };
 }
+export interface NewPatient {
+  name: string; condition: string; exercise_key: string; side: 'left' | 'right'; target_rom: number;
+  sets?: number; reps?: number; frequency_per_week?: number; pain_threshold?: number; surgery_date?: string | null; link_to_me?: boolean;
+}
 export interface PatientSummary {
   id: number; name: string; mrn: string; username: string; condition: string; surgery_date: string | null; clinician: string;
   plan: Plan | null; assessment: Assessment; openAlerts: number; lastSession: string | null; sparkline: number[];
@@ -85,6 +89,7 @@ export interface Me { user: { id: string | null; issuer: string; name: string; u
 export const api = {
   patients: () => call<PatientSummary[]>('GET', '/api/patients'),
   patient: (id: number) => call<PatientDetail>('GET', `/api/patients/${id}`),
+  createPatient: (payload: NewPatient) => call<{ id: number; patient: { id: number; name: string; mrn: string }; plan: Plan }>('POST', '/api/patients', payload),
   caseload: () => call<Caseload>('GET', '/api/caseload'),
   alerts: (status?: string) => call<Alert[]>('GET', `/api/alerts${status ? `?status=${status}` : ''}`),
   setAlertStatus: (id: number, status: Alert['status']) => call<Alert>('PATCH', `/api/alerts/${id}`, { status }),
