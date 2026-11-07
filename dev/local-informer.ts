@@ -17,10 +17,10 @@
 //
 // The workspace is a real Postgres (PGlite, WASM) persisted under
 // .informer-local/, and migrations/ run on boot exactly as on deploy.
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, resolve as resolvePath } from 'node:path';
-import { parse as parseUrl } from 'node:url';
+import { parse as parseUrl, pathToFileURL } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin, ViteDevServer } from 'vite';
 import { load as loadYaml } from 'js-yaml';
@@ -128,7 +128,8 @@ function buildLog(prefix: string) {
 export function localInformer(options: LocalInformerOptions = {}): Plugin {
   let isDev = false;
   const projectRoot = process.cwd();
-  const dataDir = resolvePath(projectRoot, options.dataDir || '.informer-local/pgdata');
+  // ARCRX_DATA_DIR isolates a workspace (e2e runs use a fresh one per run).
+  const dataDir = resolvePath(projectRoot, process.env.ARCRX_DATA_DIR || options.dataDir || '.informer-local/pgdata');
 
   const mock = {
     report: { id: 'dev-local', name: 'Local Development', ...(options.mock?.report || {}) },
@@ -233,13 +234,13 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
     try { return (loadYaml(readFileSync(resolvePath(projectRoot, 'informer.yaml'), 'utf8')) as Record<string, unknown>) || {}; } catch { return {}; }
   }
 
-  async function loadTools(server: ViteDevServer, names: string[]): Promise<LocalTool[]> {
+  async function loadTools(_server: unknown, names: string[]): Promise<LocalTool[]> {
     const files = await walkJsFiles(resolvePath(projectRoot, 'tools'), 'tools');
     const tools: LocalTool[] = [];
     for (const name of names) {
       const file = files.find((f) => f.relPath.replace(/^tools\//, '').replace(/\.js$/, '').replace(/\//g, '_') === name);
       if (!file) { console.warn(`[arcrx-local] tool "${name}" not found in tools/`); continue; }
-      const mod = await server.ssrLoadModule(file.absPath);
+      const mod = await loadModule(file.absPath);
       if (typeof mod.handler !== 'function') continue;
       tools.push({
         name,
@@ -250,11 +251,14 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
     }
     return tools;
   }
+  // Dev: Vite's SSR loader (HMR). Preview: plain dynamic import, re-imported when the file changes.
+  let loadModule: (file: string) => Promise<Record<string, any>> = async (file) => import(`${pathToFileURL(file).href}?t=${statSync(file).mtimeMs}`); // eslint-disable-line @typescript-eslint/no-explicit-any
+
   let currentAgent = '';
   let currentRunId = '';
   let currentTrigger: unknown = null;
 
-  async function serverRoutes(server: ViteDevServer, req: IncomingMessage, res: ServerResponse, next: () => void) {
+  async function serverRoutes(server: unknown, req: IncomingMessage, res: ServerResponse, next: () => void) {
     const parsed = parseUrl(req.url || '/', true);
     const routePath = parsed.pathname || '/';
     const files = await walkJsFiles(resolvePath(projectRoot, 'server'), 'server');
@@ -264,7 +268,7 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
     const method = (req.method || 'GET').toUpperCase();
     if (!VALID_METHODS.includes(method)) return send(res, 405, { error: 'Method not allowed' });
     try {
-      const mod = await server.ssrLoadModule(match.route.filePath);
+      const mod = await loadModule(match.route.filePath);
       const handler = mod[method];
       if (typeof handler !== 'function') return send(res, 404, { error: 'Method not found' });
       // Demo-only role override: the UI switches between patient/clinician views.
@@ -304,13 +308,13 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
       }
       send(res, 200, result);
     } catch (err) {
-      server.ssrFixStacktrace(err as Error);
+      (server as ViteDevServer | undefined)?.ssrFixStacktrace?.(err as Error);
       console.error('[arcrx-local server-routes]', err);
       send(res, 500, { error: (err as Error).message });
     }
   }
 
-  async function agentRoutes(server: ViteDevServer, req: IncomingMessage, res: ServerResponse, next: () => void) {
+  async function agentRoutes(server: unknown, req: IncomingMessage, res: ServerResponse, next: () => void) {
     const parsed = parseUrl(req.url || '/', true);
     const routePath = parsed.pathname || '/';
     const manifest = loadManifest();
@@ -382,20 +386,15 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
     },
     async configureServer(server) {
       if (!isDev) return;
-      try {
-        await getDb();
-        const [{ n }] = await query('SELECT COUNT(*)::int AS n FROM patients');
-        console.log(`[arcrx-local] workspace ready at ${dataDir} (${n} patients) — AI: ${aiAvailable() ? 'Anthropic' : 'rule-based fallback'}`);
-      } catch (err) {
-        console.error('[arcrx-local] workspace failed to open:', (err as Error).message);
-      }
-      server.middlewares.use('/api/_agent', (req, res, next) => void agentRoutes(server, req, res, next));
-      server.middlewares.use('/api/models', (req, res, next) => void modelRoutes(req, res, next));
-      server.middlewares.use('/api/_events', (_req, res) => send(res, 200, emitted.slice(-50).reverse()));
-      // App routes answer at bare /api/<path>, as on Informer (2026.1.2+ origin mode);
-      // /api/_server/<path> stays as the legacy dev spelling.
-      server.middlewares.use('/api/_server', (req, res, next) => void serverRoutes(server, req, res, next));
-      server.middlewares.use('/api', (req, res, next) => void serverRoutes(server, req, res, next));
+      loadModule = (file) => server.ssrLoadModule(file);
+      await mount(server, server.middlewares);
+    },
+    // `vite preview` serves the production bundle (dist/) with this same API but
+    // reports a non-dev platform: no injected context, no __role, no dev agent
+    // triggers, in-process triage — the code paths the deployed app runs.
+    async configurePreviewServer(server) {
+      mock.platform.version = 'preview';
+      await mount(undefined, server.middlewares);
     },
     transformIndexHtml: {
       order: 'pre',
@@ -407,4 +406,21 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
       },
     },
   };
+
+  async function mount(server: ViteDevServer | undefined, middlewares: { use: (path: string, fn: (req: IncomingMessage, res: ServerResponse, next: () => void) => void) => unknown }) {
+      try {
+        await getDb();
+        const [{ n }] = await query('SELECT COUNT(*)::int AS n FROM patients');
+        console.log(`[arcrx-local] workspace ready at ${dataDir} (${n} patients) — AI: ${aiAvailable() ? 'Anthropic' : 'rule-based fallback'}`);
+      } catch (err) {
+        console.error('[arcrx-local] workspace failed to open:', (err as Error).message);
+      }
+      middlewares.use('/api/_agent', (req, res, next) => void agentRoutes(server, req, res, next));
+      middlewares.use('/api/models', (req, res, next) => void modelRoutes(req, res, next));
+      middlewares.use('/api/_events', (_req, res) => send(res, 200, emitted.slice(-50).reverse()));
+      // App routes answer at bare /api/<path>, as on Informer (2026.1.2+ origin mode);
+      // /api/_server/<path> stays as the legacy dev spelling.
+      middlewares.use('/api/_server', (req, res, next) => void serverRoutes(server, req, res, next));
+      middlewares.use('/api', (req, res, next) => void serverRoutes(server, req, res, next));
+  }
 }
