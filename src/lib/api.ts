@@ -9,11 +9,11 @@ export const setApiRole = (r: Role) => (currentRole = r);
 
 export class ApiError extends Error { constructor(public status: number, message: string) { super(message); } }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, asRole?: Role): Promise<T> {
   // In dev the mirror honours a demo-only `__role` so the UI can switch views;
   // in production roles come from Informer and this parameter is ignored.
   const sep = path.includes('?') ? '&' : '?';
-  const url = isDevPlatform() && !path.startsWith('/api/me') ? `${path}${sep}__role=${currentRole}` : path;
+  const url = isDevPlatform() && !path.startsWith('/api/me') ? `${path}${sep}__role=${asRole || currentRole}` : path;
   const res = await fetch(url, {
     method,
     headers: body ? { 'content-type': 'application/json' } : undefined,
@@ -89,7 +89,8 @@ export interface Me { user: { id: string | null; issuer: string; name: string; u
 export const api = {
   patients: () => call<PatientSummary[]>('GET', '/api/patients'),
   patient: (id: number) => call<PatientDetail>('GET', `/api/patients/${id}`),
-  createPatient: (payload: NewPatient) => call<{ id: number; patient: { id: number; name: string; mrn: string }; plan: Plan }>('POST', '/api/patients', payload),
+  // Adding a patient is a clinician action; in the dev servers the Exercise tab otherwise acts as the patient.
+  createPatient: (payload: NewPatient) => call<{ id: number; patient: { id: number; name: string; mrn: string }; plan: Plan }>('POST', '/api/patients', payload, 'clinician'),
   caseload: () => call<Caseload>('GET', '/api/caseload'),
   alerts: (status?: string) => call<Alert[]>('GET', `/api/alerts${status ? `?status=${status}` : ''}`),
   setAlertStatus: (id: number, status: Alert['status']) => call<Alert>('PATCH', `/api/alerts/${id}`, { status }),

@@ -22,10 +22,11 @@ async function vision() {
 export async function loadLandmarker(model: CvModel, onStatus?: (s: string) => void): Promise<Landmarker> {
   if (!landmarkers[model]) {
     landmarkers[model] = (async (): Promise<Landmarker> => {
-      onStatus?.('Loading vision runtime');
+      // First load downloads ~15 MB of runtime plus the model; later loads come from the browser cache.
+      onStatus?.('Loading vision runtime (about 15 MB the first time)');
       const mp = await vision();
       const fileset = await mp.FilesetResolver.forVisionTasks(WASM_PATH);
-      onStatus?.(model === 'pose' ? 'Loading pose model' : 'Loading face model');
+      onStatus?.(model === 'pose' ? 'Loading pose model (about 6 MB the first time)' : 'Loading face model (about 4 MB the first time)');
       const make = async (delegate: 'GPU' | 'CPU'): Promise<Landmarker> => {
         if (model === 'pose') {
           const lm = await mp.PoseLandmarker.createFromOptions(fileset, {
