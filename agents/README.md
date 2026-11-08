@@ -16,6 +16,12 @@ LLM is reachable, so the whole loop — session → agent → alert → note →
 works on a laptop with no network. With `INFORMER_URL` (Informer AI) or an
 `ANTHROPIC_API_KEY` (local mirror) the LLM drives the same tools itself.
 
+On the deployed app, Informer runs these agents when the tenant has a model in its
+catalog. When it has none (`/api/ai-budget` and `/api/chat-models`), the session route
+and the "Run now" route run the same protocol in-process (`lib/triage.js`) with the same
+tools. Every tool call, from any of these paths, is written to the `agent_activity` audit
+table that the Agents tab reads.
+
 Trigger an agent by hand while developing:
 
 ```bash
