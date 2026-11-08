@@ -1,0 +1,136 @@
+{
+  "base": "http://localhost:4173",
+  "chrome": "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+  "at": "2026-11-08T00:01:55.945Z",
+  "summary": {
+    "passed": 8
+  },
+  "results": [
+    {
+      "id": "F1",
+      "area": "flow",
+      "title": "First visit loads the shell with no errors",
+      "expected": "Exercise tab, picker and both start buttons; no console or page errors",
+      "actual": "shell ready; DCL 165 ms, load 167 ms",
+      "status": "passed",
+      "ms": 728,
+      "metrics": {
+        "domContentLoadedMs": 165,
+        "loadMs": 167,
+        "toShellMs": 728
+      }
+    },
+    {
+      "id": "F2",
+      "area": "flow",
+      "title": "[sim] Complete session saves once and shows triage for that session",
+      "expected": "+1 session row; outcome card lists agent tool calls; run log has a run for that session id",
+      "actual": "session 206 saved once (3 reps, source simulation); 3 tool calls recorded for it; 1 POST",
+      "status": "passed",
+      "ms": 14052,
+      "evidence": {
+        "sessionId": 206,
+        "reps": 3,
+        "runs": 1
+      }
+    },
+    {
+      "id": "F4",
+      "area": "recovery",
+      "title": "[stub] Save fails with 500, then retry",
+      "expected": "error shown, reps kept, a retry control saves exactly one row",
+      "actual": "retry saved one row",
+      "status": "passed",
+      "ms": 8239
+    },
+    {
+      "id": "C2",
+      "area": "camera",
+      "title": "[synthetic-cam] Stop releases the camera and the loop",
+      "expected": "all tracks ended; inference rAF stops",
+      "actual": "tracks 1 → 0; rAF 80/s → 0/s",
+      "status": "passed",
+      "ms": 11323
+    },
+    {
+      "id": "C8",
+      "area": "camera",
+      "title": "[synthetic-cam] Camera disconnects mid-session",
+      "expected": "the app says the camera stopped, stops the loop, and offers a way forward",
+      "actual": "\"The camera stopped (unplugged, turned off, or taken by another app). Start it ag\"; loop stopped",
+      "status": "passed",
+      "ms": 10519
+    },
+    {
+      "id": "P1",
+      "area": "privacy",
+      "title": "[synthetic-cam]+[sim] What leaves the browser during camera use and a saved session",
+      "expected": "only same-origin app API and static assets; the session POST carries scored numbers only",
+      "actual": "same-origin only; 4 API routes; session POST 455 bytes with fields patient_id, exercise_key, side, started_at, ended_at, pain_score, source, reps, client_ref; no storage, no websockets",
+      "status": "passed",
+      "ms": 13298,
+      "evidence": {
+        "apiPaths": [
+          "GET /api/me",
+          "GET /api/patients",
+          "GET /api/patients/:id",
+          "POST /api/sessions"
+        ],
+        "assets": [
+          "/",
+          "/assets/*.js",
+          "/assets/*.css",
+          "/favicon.svg",
+          "/mediapipe/*.js",
+          "/mediapipe/vision_wasm_internal.wasm",
+          "/models/pose_landmarker_lite.task"
+        ],
+        "storage": {
+          "local": [],
+          "session": [],
+          "idb": [],
+          "cookies": ""
+        },
+        "websockets": [],
+        "postKeys": [
+          "patient_id",
+          "exercise_key",
+          "side",
+          "started_at",
+          "ended_at",
+          "pain_score",
+          "source",
+          "reps",
+          "client_ref"
+        ],
+        "repKeys": [
+          "index",
+          "peak_angle",
+          "duration_ms",
+          "hold_ms",
+          "smoothness",
+          "compensation_flags"
+        ],
+        "payloadBytes": 455
+      }
+    },
+    {
+      "id": "U1",
+      "area": "usability",
+      "title": "No horizontal scrolling across tabs and viewports",
+      "expected": "scrollWidth ≤ innerWidth on every tab at 360, 390, 768, 1366, 1920 and a 200% zoom proxy (683 px)",
+      "actual": "24 tab × viewport combinations fit",
+      "status": "passed",
+      "ms": 19270
+    },
+    {
+      "id": "U3",
+      "area": "usability",
+      "title": "Lost tracking is communicated and the reading is not shown as live",
+      "expected": "status says tracking is lost and the angle is visibly marked as not live",
+      "actual": "\"Step into frame to calibrate\"; gauge dimmed (rgb(138, 150, 179))",
+      "status": "passed",
+      "ms": 4287
+    }
+  ]
+}

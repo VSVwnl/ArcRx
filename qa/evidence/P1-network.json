@@ -1,0 +1,72 @@
+{
+  "apiPaths": [
+    "GET /api/me",
+    "GET /api/patients",
+    "GET /api/patients/:id",
+    "POST /api/sessions",
+    "POST /api/_agent/rehab_triage/_trigger"
+  ],
+  "assets": [
+    "/",
+    "/@vite/client",
+    "/src/main.tsx",
+    "/@react-refresh",
+    "/node_modules/.vite/deps/*.js",
+    "/src/*.css",
+    "/src/App.tsx",
+    "/node_modules/vite/dist/client/env.mjs",
+    "/src/lib/api.ts",
+    "/src/lib/informer.ts",
+    "/src/views/PatientHome.tsx",
+    "/src/views/ClinicianDashboard.tsx",
+    "/src/views/AskView.tsx",
+    "/src/views/AgentsView.tsx",
+    "/src/views/SignIn.tsx",
+    "/src/components/ui.tsx",
+    "/src/cv/types.ts",
+    "/src/views/SessionView.tsx",
+    "/src/views/AddPatientForm.tsx",
+    "/src/views/PatientDetail.tsx",
+    "/@id/__x00__virtual:arcrx-manifest",
+    "/src/cv/useSessionEngine.ts",
+    "/src/cv/angles.ts",
+    "/src/cv/filters.ts",
+    "/src/cv/mediapipe.ts",
+    "/src/cv/overlay.ts",
+    "/src/cv/repDetector.ts",
+    "/src/cv/simulator.ts",
+    "/favicon.svg",
+    "/mediapipe/*.js",
+    "/mediapipe/vision_wasm_internal.wasm",
+    "/models/pose_landmarker_lite.task"
+  ],
+  "storage": {
+    "local": [],
+    "session": [],
+    "idb": [],
+    "cookies": ""
+  },
+  "websockets": [
+    "ws://localhost:5176/?token=usudQQVlXwE8"
+  ],
+  "postKeys": [
+    "patient_id",
+    "exercise_key",
+    "side",
+    "started_at",
+    "ended_at",
+    "pain_score",
+    "source",
+    "reps",
+    "client_ref"
+  ],
+  "repKeys": [
+    "index",
+    "peak_angle",
+    "duration_ms",
+    "hold_ms",
+    "smoothness",
+    "compensation_flags"
+  ],
+  "payloadBytes": 447
+}

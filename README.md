@@ -149,8 +149,13 @@ protocol templates per surgery type.
 ## Tests
 
 ```bash
-npm test          # 73 end-to-end checks, no network or API key, about 10 seconds (Node 22.18+)
+npm test          # server + CV fixture checks, no network or API key, ~15 s (Node 22.18+)
+npm run build && ARCRX_DATA_DIR=/tmp/arcrx-qa npx vite preview   # production bundle on an isolated DB
+npm run test:e2e  # 35-scenario browser matrix against it (installed Chrome; CHROME_PATH for Edge)
+node qa/live-check.mjs   # live Informer checks after `inf login`
 ```
+
+The release QA pass, its evidence and the pre-demo checklist are in [QA_REPORT.md](QA_REPORT.md).
 
 The suite applies the real migrations to an in-memory Postgres (PGlite) and calls the real route
 handlers, agent tools and agent fallback plans. It covers role scoping and gates, session
