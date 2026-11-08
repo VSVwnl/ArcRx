@@ -17,7 +17,7 @@
 //
 // The workspace is a real Postgres (PGlite, WASM) persisted under
 // .informer-local/, and migrations/ run on boot exactly as on deploy.
-import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, resolve as resolvePath } from 'node:path';
 import { parse as parseUrl, pathToFileURL } from 'node:url';
@@ -139,6 +139,19 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
     platform: { version: 'dev', originMode: true, mirror: 'arcrx-local', capabilities: CAPABILITIES },
   };
 
+  // One process per data directory: two PGlite instances writing the same files
+  // corrupt the workspace (e.g. a second `npm run dev` that drifted to another port).
+  function claimDataDir() {
+    const lock = join(dataDir, '.arcrx-owner');
+    if (existsSync(lock)) {
+      const pid = Number(readFileSync(lock, 'utf8').trim());
+      let alive = false;
+      if (pid && pid !== process.pid) { try { process.kill(pid, 0); alive = true; } catch { alive = false; } }
+      if (alive) throw new Error(`workspace ${dataDir} is already open in another process (pid ${pid}). Stop that dev/preview server first, or set ARCRX_DATA_DIR to use a separate workspace.`);
+    }
+    writeFileSync(lock, String(process.pid));
+  }
+
   // Cached on globalThis so a Vite config restart (which re-evaluates this
   // plugin in the same process) reuses the open PGlite instance instead of
   // opening the data directory twice, which aborts the WASM runtime.
@@ -152,6 +165,7 @@ export function localInformer(options: LocalInformerOptions = {}): Plugin {
 
   async function openWorkspace(): Promise<PGlite> {
     mkdirSync(dataDir, { recursive: true });
+    claimDataDir();
     const db = await PGlite.create(dataDir);
     await db.exec('CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, executed_at TIMESTAMPTZ DEFAULT NOW());');
     const applied = new Set((await db.query<{ name: string }>('SELECT name FROM _migrations')).rows.map((r) => r.name));

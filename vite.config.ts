@@ -46,7 +46,9 @@ export default defineConfig(({ mode }) => {
         ? localInformer({ mock: { theme: 'dark', roles: ['clinician', 'patient'] } })
         : informer({ mock: { theme: 'dark', roles: ['clinician', 'patient'] } }),
     ],
-    server: { port: 5173, strictPort: false },
+    // Fixed port: a second `npm run dev` fails loudly instead of starting on 5174 against the same workspace.
+    server: { port: 5173, strictPort: true },
+    preview: { port: 4173, strictPort: true },
     build: { target: 'es2022', chunkSizeWarningLimit: 1500 },
     optimizeDeps: { exclude: ['@electric-sql/pglite'] },
   };
