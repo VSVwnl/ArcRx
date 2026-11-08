@@ -90,7 +90,7 @@ ArcRx turns a laptop webcam into a clinical range-of-motion instrument backed by
 - Four exercises across two vision models, each with its own compensation checks.
 - Six weeks of realistic longitudinal data for four patients (plateau, regression with pain, ready-to-progress, non-adherent) so the analytics and both agents have something true to say.
 - Full conformance to the Informer Apps structure: `informer.yaml`, `server/`, `tools/`, `migrations/`, `lib/`, package `informer` block, workspace and deploy scripts.
-- 99 server checks, 23 computer-vision fixture checks, a 35-scenario browser matrix (Chrome and Edge) and 17 live Informer checks.
+- 102 server checks, 23 computer-vision fixture checks, a 35-scenario browser matrix (Chrome and Edge) and 17 live Informer checks.
 
 ### What we learned
 

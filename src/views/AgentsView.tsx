@@ -20,6 +20,9 @@ export default function AgentsView({ refresh }: { refresh: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [last, setLast] = useState<AgentRun | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // On Informer: does the tenant have a model (Informer runs the agents) or not
+  // (the routes run the same protocol in-process)? null until known.
+  const [ai, setAi] = useState<boolean | null>(null);
   const pollTimer = useRef<number | null>(null);
 
   const loadRuns = useCallback(() => api.agentRuns({ limit: 20 }).then(setRuns).catch(() => setRuns([])), []);
@@ -27,6 +30,7 @@ export default function AgentsView({ refresh }: { refresh: () => void }) {
   useEffect(() => {
     loadRuns();
     if (dev) api.agents().then((list) => setAgents((cur) => cur.map((a) => ({ ...a, mode: list.find((x) => x.name === a.name)?.mode })))).catch(() => {});
+    else api.agentStatus().then((s) => setAi(s.ai)).catch(() => {});
     return () => { if (pollTimer.current) window.clearTimeout(pollTimer.current); };
   }, [dev, loadRuns]);
 
@@ -95,9 +99,17 @@ export default function AgentsView({ refresh }: { refresh: () => void }) {
                 <div className="font-medium">{a.name}</div>
                 <div className="text-xs text-mute">{a.cron ? `cron ${a.cron}` : `on ${Array.isArray(a.on) ? a.on.join(', ') : a.on}`} · model {a.model}</div>
               </div>
-              <span className="shrink-0 rounded-full px-2 py-0.5 text-[11px]" style={{ background: a.mode === 'llm' ? 'rgba(167,139,250,0.18)' : 'rgba(79,209,197,0.14)', color: a.mode === 'llm' ? '#A78BFA' : '#4FD1C5' }}>
-                {a.mode === 'llm' ? 'LLM loop' : a.mode === 'fallback' ? 'offline plan' : 'Informer AI'}
-              </span>
+              {(() => {
+                const model = dev ? a.mode === 'llm' : ai === true;
+                const label = dev
+                  ? (a.mode === 'llm' ? 'LLM loop' : a.mode === 'fallback' ? 'deterministic protocol' : 'Informer agent')
+                  : (ai === true ? 'Informer AI' : ai === false ? 'deterministic protocol' : 'Informer agent');
+                return (
+                  <span className="shrink-0 rounded-full px-2 py-0.5 text-[11px]" style={{ background: model ? 'rgba(167,139,250,0.18)' : 'rgba(79,209,197,0.14)', color: model ? '#A78BFA' : '#4FD1C5' }}>
+                    {label}
+                  </span>
+                );
+              })()}
             </div>
             <p className="mt-2 text-sm text-paper/85">{a.description}</p>
             <div className="mt-2 flex flex-wrap gap-1">

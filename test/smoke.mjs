@@ -95,6 +95,17 @@ for (const [f, m, opts] of [['server/caseload/index.js', 'GET', {}], ['server/ag
   ok(`patient blocked from ${m} ${f.replace('server/', '')}`, r.status === 403, `status ${r.status}`);
 }
 
+section('Agent status (badge on the Agents tab)');
+{
+  const st = await imp('server/agents/status.js');
+  const aiOff = async () => ({ status: 404, body: {} });
+  const aiOn = async (p) => (p === 'ai-budget' ? { status: 200, body: { configured: true } } : p === 'chat-models' ? { status: 200, body: { total: 1 } } : { status: 404, body: {} });
+  r = await st.GET({ ...base(), fetch: aiOff });
+  ok('no model in the tenant → ai: false', r.ai === false, JSON.stringify(r));
+  r = await st.GET({ ...base(), fetch: aiOn });
+  ok('model in the catalog → ai: true', r.ai === true, JSON.stringify(r));
+}
+
 section('Manual agent trigger (rate limit reserves atomically)');
 {
   const trig = await imp('server/agents/trigger.js');
@@ -196,6 +207,8 @@ section('In-process triage when the install has no AI model');
   ok('plateau patient → plan progressed +5° / +1 rep', adj?.result?.changed && Number(plan1b.target_rom) === Number(plan1.target_rom) + 5 && plan1b.reps === plan1.reps + 1, JSON.stringify({ from: plan1, to: plan1b, adj: adj?.result, summary: out1.summary }));
   const wk = await runWeeklyReport(bag);
   ok('weekly report inline flags Tomás', /Tom/.test(JSON.stringify(wk.steps)) && /low adherence: 1/.test(wk.summary), wk.summary);
+  const wkAlert = wk.steps.flatMap((s) => s.toolCalls || []).find((c) => c.name === 'create_alert');
+  ok('weekly alert title does not repeat the patient name', wkAlert && /^\d+ of \d+ sessions this week$/.test(wkAlert.args.title), wkAlert?.args?.title);
 
   // The session route runs it itself on a non-dev platform without AI.
   const mod = await imp('server/sessions/index.js');

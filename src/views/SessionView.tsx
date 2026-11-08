@@ -345,7 +345,7 @@ function OutcomeCard({ outcome }: { outcome: Outcome }) {
         <div className="mt-3 space-y-1.5 text-xs">
           <div className="text-mute">Agent ran {calls.length} tool calls{outcome.agent.durationMs ? ` in ${outcome.agent.durationMs} ms` : ''} ({outcome.agent.mode === 'llm' ? 'Claude' : outcome.agent.mode === 'fallback' || outcome.agent.mode === 'inline' ? 'deterministic protocol' : 'Informer AI'})</div>
           {alert && <div className="rounded-md bg-coral/15 px-2 py-1 text-coral">Alert raised: {String((alert.args as { title?: string }).title)}</div>}
-          {plan && <div className="rounded-md bg-teal/15 px-2 py-1 text-teal">Plan progressed: {JSON.stringify((plan.result as { change?: unknown }).change)}</div>}
+          {plan && <div className="rounded-md bg-teal/15 px-2 py-1 text-teal">Plan progressed: {describePlanChange((plan.result as { change?: PlanChange }).change)}</div>}
           {note && <div className="rounded-md bg-ink-800 px-2 py-1 text-paper/80">Progress note written to the chart.</div>}
         </div>
       ) : outcome.agentError ? (
@@ -356,3 +356,18 @@ function OutcomeCard({ outcome }: { outcome: Outcome }) {
     </div>
   );
 }
+
+type PlanChange = Record<string, { from: number | string; to: number | string }>;
+const PLAN_FIELDS: Record<string, [string, string]> = {
+  target_rom: ['target', '°'], reps: ['reps', ''], sets: ['sets', ''], frequency_per_week: ['sessions a week', ''],
+};
+/** {"target_rom":{"from":150,"to":155},"reps":{...}} → "target 150° → 155°, reps 10 → 11" */
+function describePlanChange(change: PlanChange | undefined): string {
+  const parts = Object.entries(change || {}).map(([k, v]) => {
+    const [label, unit] = PLAN_FIELDS[k] || [k.replace(/_/g, ' '), ''];
+    const n = (x: number | string) => `${Math.round(Number(x) * 10) / 10}${unit}`;
+    return `${label} ${n(v.from)} → ${n(v.to)}`;
+  });
+  return parts.length ? parts.join(', ') : 'updated';
+}
+

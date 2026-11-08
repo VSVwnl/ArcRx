@@ -189,7 +189,7 @@ app's `notifications:` opt-in, which this prototype does not declare yet.
   ready-to-progress, non-adherent), anchored to the day the workspace is created.
 - Privacy verified at runtime: only the app's own origin is contacted, and the only write is about
   450 bytes of scored numbers per session.
-- 99 server checks, 23 computer-vision fixture checks, a 35-scenario browser matrix and 17 live
+- 102 server checks, 23 computer-vision fixture checks, a 35-scenario browser matrix and 17 live
   Informer checks.
 
 ## What's next

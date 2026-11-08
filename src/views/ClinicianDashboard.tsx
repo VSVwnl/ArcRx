@@ -110,7 +110,7 @@ export default function ClinicianDashboard({ patients, refresh, version }: { pat
                   <div className="flex items-start gap-2">
                     <SeverityDot severity={a.severity} />
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium">{a.patient_name} — {a.title}</div>
+                      <div className="text-sm font-medium">{a.patient_name} — {alertTitle(a.title, a.patient_name)}</div>
                       <p className="mt-0.5 text-xs text-mute">{a.body}</p>
                       <div className="mt-1 text-[11px] text-mute">{a.kind} · {a.created_by} · {timeAgo(a.created_at)}</div>
                     </div>
@@ -132,3 +132,10 @@ export default function ClinicianDashboard({ patients, refresh, version }: { pat
     </div>
   );
 }
+
+// Older digest alerts carry the patient's name in the title ("Tomás Alvarez: 0 of 5
+// sessions this week"); the queue already shows the name, so drop the repeat.
+function alertTitle(title: string, name: string | null | undefined): string {
+  return name && title.startsWith(`${name}: `) ? title.slice(name.length + 2) : title;
+}
+

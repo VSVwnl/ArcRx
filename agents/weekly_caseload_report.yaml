@@ -23,7 +23,7 @@ fallback:
         patient_id: $p.patient_id
         severity: low
         kind: adherence
-        title: "{p.name}: {p.sessions_7d} of {p.prescribed_per_week} sessions this week"
+        title: "{p.sessions_7d} of {p.prescribed_per_week} sessions this week"
         body: "Weekly digest flagged adherence at {p.adherence}%. Suggested: a short check-in message and confirm the home setup still works."
 
   summary: "Weekly digest — regression: {caseload.counts.regression}, plateau: {caseload.counts.plateau}, low adherence: {caseload.counts.non_adherent}, ready to progress: {caseload.counts.ready_to_progress}, on track: {caseload.counts.on_track}"
