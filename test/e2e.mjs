@@ -25,6 +25,9 @@ mkdirSync(join(OUT, 'evidence'), { recursive: true });
 
 const results = [];
 let lastPage = null;
+// Matches the save endpoint with or without the dev servers' ?__role= suffix.
+const SESSIONS_URL = /\/api\/sessions(\?|$)/;
+const ME_URL = /\/api\/me(\?|$)/;
 const FAKE_CAM = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'];
 
 // Injected before any app code: tracks camera streams and rAF callbacks, and can
@@ -158,7 +161,7 @@ await scenario('F2', 'flow', '[sim] Complete session saves once and shows triage
   const after = await sessionCount();
   const s = await latestSession();
   const runs = (await api(`/api/agents/runs?session_id=${s.id}`)).body;
-  const sent = log.requests.filter((r) => r.method === 'POST' && r.url.endsWith('/api/sessions'));
+  const sent = log.requests.filter((r) => r.method === 'POST' && SESSIONS_URL.test(r.url));
   await context.close();
   rec.evidence = { sessionId: s.id, reps: s.reps, runs: runs.length };
   if (after !== before + 1) return fail(rec, `session rows ${before} → ${after}`);
@@ -183,7 +186,7 @@ await scenario('F4', 'recovery', '[stub] Save fails with 500, then retry', 'erro
   const { page, context } = await open(browser);
   const before = await sessionCount();
   let first = true;
-  await page.route('**/api/sessions', (r) => { if (r.request().method() === 'POST' && first) { first = false; return r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' }); } return r.continue(); });
+  await page.route(SESSIONS_URL, (r) => { if (r.request().method() === 'POST' && first) { first = false; return r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' }); } return r.continue(); });
   await startSim(page);
   await waitReps(page, 2, 30000);
   const repsBefore = await reps(page);
@@ -207,7 +210,7 @@ await scenario('F5', 'integrity', '[stub] Response lost after the server wrote t
   const { page, context } = await open(browser);
   const before = await sessionCount();
   let first = true;
-  await page.route('**/api/sessions', async (r) => {
+  await page.route(SESSIONS_URL, async (r) => {
     if (r.request().method() === 'POST' && first) { first = false; await r.fetch(); return r.abort('failed'); }
     return r.continue();
   });
@@ -227,7 +230,7 @@ await scenario('F5', 'integrity', '[stub] Response lost after the server wrote t
 for (const [code, re] of [[401, /sign in|session|401/i], [429, /too many|wait|429/i], [503, /unavailable|try again|503/i]]) {
   await scenario(`F6-${code}`, 'recovery', `[stub] Save answers ${code}`, 'clear message, no crash, retry available', async (rec) => {
     const { page, context, log } = await open(browser);
-    await page.route('**/api/sessions', (r) => (r.request().method() === 'POST' ? r.fulfill({ status: code, contentType: 'application/json', body: JSON.stringify({ message: `HTTP ${code} from QA stub` }) }) : r.continue()));
+    await page.route(SESSIONS_URL, (r) => (r.request().method() === 'POST' ? r.fulfill({ status: code, contentType: 'application/json', body: JSON.stringify({ message: `HTTP ${code} from QA stub` }) }) : r.continue()));
     await startSim(page);
     await waitReps(page, 1, 30000);
     await finishBtn(page).click();
@@ -243,7 +246,7 @@ for (const [code, re] of [[401, /sign in|session|401/i], [429, /too many|wait|42
 
 await scenario('F7', 'recovery', '[stub] Malformed 200 response to save', 'no crash; error shown; data not lost', async (rec) => {
   const { page, context, log } = await open(browser);
-  await page.route('**/api/sessions', (r) => (r.request().method() === 'POST' ? r.fulfill({ status: 200, contentType: 'application/json', body: '{"oops": tru' }) : r.continue()));
+  await page.route(SESSIONS_URL, (r) => (r.request().method() === 'POST' ? r.fulfill({ status: 200, contentType: 'application/json', body: '{"oops": tru' }) : r.continue()));
   await startSim(page);
   await waitReps(page, 1, 30000);
   await finishBtn(page).click();
@@ -277,7 +280,7 @@ await scenario('F8', 'recovery', '[stub] Offline at save time, back online, retr
 await scenario('F9', 'flow', '[sim] Slow save, user leaves the tab before it answers', 'no page error; saved once; Exercise tab fresh on return', async (rec) => {
   const { page, context, log } = await open(browser);
   const before = await sessionCount();
-  await page.route('**/api/sessions', async (r) => { if (r.request().method() === 'POST') await new Promise((x) => setTimeout(x, 2500)); return r.continue(); });
+  await page.route(SESSIONS_URL, async (r) => { if (r.request().method() === 'POST') await new Promise((x) => setTimeout(x, 2500)); return r.continue(); });
   await startSim(page);
   await waitReps(page, 1, 30000);
   await finishBtn(page).click();
@@ -329,7 +332,7 @@ await scenario('F11', 'flow', '[sim] Refresh mid-session', 'no partial row writt
 await scenario('F12', 'flow', '[sim] Back-to-back sessions and stale results', 'second session starts clean; the first result never reappears over it', async (rec) => {
   const { page, context } = await open(browser);
   // Force the asynchronous production path: strip the inline triage result so the page polls.
-  await page.route('**/api/sessions', async (r) => {
+  await page.route(SESSIONS_URL, async (r) => {
     if (r.request().method() !== 'POST') return r.continue();
     const res = await r.fetch(); const j = await res.json(); delete j.triage;
     return r.fulfill({ response: res, json: j });
@@ -492,7 +495,7 @@ await scenario('P1', 'privacy', '[synthetic-cam]+[sim] What leaves the browser d
   const foreign = log.requests.filter((r) => !r.url.startsWith(origin) && !r.url.startsWith('data:') && !r.url.startsWith('blob:'));
   const withBody = log.requests.filter((r) => r.body);
   const leaks = withBody.filter((r) => /data:image|base64,|"landmarks"|"x":\s*0\.\d+.*"y":\s*0\.\d+.*"z"/.test(r.body) || r.body.length > 20000);
-  const post = withBody.find((r) => r.url.endsWith('/api/sessions'));
+  const post = withBody.find((r) => SESSIONS_URL.test(r.url));
   const body = post ? JSON.parse(post.body) : {};
   const allowedTop = ['patient_id', 'exercise_key', 'side', 'started_at', 'ended_at', 'pain_score', 'source', 'reps', 'client_ref'];
   const allowedRep = ['index', 'peak_angle', 'duration_ms', 'hold_ms', 'smoothness', 'compensation_flags'];
@@ -563,7 +566,7 @@ await scenario('A3', 'data', 'Add patient: wrong code, then demo code', 'wrong c
 await scenario('A4', 'flow', '[stub] Signed-out visitor sees the sign-in page; sign-up conflict message', 'landing page; 409 explained', async (rec) => {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await ctx.newPage();
-  await page.route('**/api/me', (r) => r.fulfill({ status: 401, contentType: 'application/json', body: '{"message":"Authentication required"}' }));
+  await page.route(ME_URL, (r) => r.fulfill({ status: 401, contentType: 'application/json', body: '{"message":"Authentication required"}' }));
   await page.route('**/_auth/signup', (r) => r.fulfill({ status: 409, body: '' }));
   await page.goto(BASE);
   await page.getByText(/webcam goniometer/i).waitFor({ timeout: 15000 });
