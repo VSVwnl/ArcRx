@@ -1,6 +1,12 @@
+<p align="center">
+  <img src="docs/media/arcrx-logo.png" alt="ArcRx logo: a goniometer with the reached range in teal and the target tick ahead" width="120">
+</p>
+
 # ArcRx: a webcam goniometer with a physical therapist's judgment in the loop
 
 **Triangle AI Hackathon 2026 · Health & Wellness track · Entrinsik Challenge: Best Use of Informer Apps**
+
+![ArcRx: Your webcam is the goniometer. Range-of-motion coaching for home rehab, with a clinician's check after every session.](docs/media/arcrx-cover.png)
 
 ArcRx turns a laptop webcam into a clinical range-of-motion instrument. A patient does their
 prescribed rehab exercise in front of the browser. MediaPipe measures the joint angle every frame
@@ -125,6 +131,7 @@ server/                file-convention routes → /api/…
   sessions/            POST stores a scored session (idempotent), emits session.completed
   alerts/, notes/, plans/[id], caseload/, exercises/
   agents/runs          the audit log, grouped into runs
+  agents/status        whether the tenant has a model (drives the Agents tab badge)
   agents/trigger       "Run now": Informer's agent API, or the in-process protocol without a model (rate-limited)
   ask/                 questions → validated read-only SQL (with a model) or the intent router
 tools/                 agent tools: get_patient_history, assess_progress, create_alert,
@@ -178,7 +185,7 @@ app's `notifications:` opt-in, which this prototype does not declare yet.
   never reach that path.
 - **Reliability under real conditions.** A release QA pass found and fixed lost sessions after a
   failed save, duplicate rows on retry, a camera left on after failures, and an undetected camera
-  disconnect. See [QA_REPORT.md](QA_REPORT.md).
+  disconnect. Each fix is covered by the browser test matrix.
 
 ## Accomplishments
 
@@ -189,8 +196,8 @@ app's `notifications:` opt-in, which this prototype does not declare yet.
   ready-to-progress, non-adherent), anchored to the day the workspace is created.
 - Privacy verified at runtime: only the app's own origin is contacted, and the only write is about
   450 bytes of scored numbers per session.
-- 102 server checks, 23 computer-vision fixture checks, a 35-scenario browser matrix and 17 live
-  Informer checks.
+- 102 server checks, 23 computer-vision fixture checks and a 35-scenario browser matrix, run in
+  Chrome and Edge.
 
 ## What's next
 
@@ -205,13 +212,12 @@ app's `notifications:` opt-in, which this prototype does not declare yet.
 npm test          # server + CV fixture checks, no network or API key (Node 22.18+)
 npm run build && ARCRX_DATA_DIR=/tmp/arcrx-qa npx vite preview   # production bundle on an isolated DB
 npm run test:e2e  # 35-scenario browser matrix against it (installed Chrome; CHROME_PATH for Edge)
-node qa/live-check.mjs        # live Informer checks after `inf login`
-node dev/capture-media.mjs    # regenerate the screenshots and GIFs in docs/media (needs ffmpeg)
 ```
 
 The server suite applies the real migrations to an in-memory Postgres and calls the real route
-handlers, agent tools and agent plans. The release QA pass, its evidence and the pre-demo
-checklist are in [QA_REPORT.md](QA_REPORT.md).
+handlers, agent tools and agent plans. The browser matrix drives the production bundle in a real
+browser, including camera failures, dropped connections and a network capture that checks no
+video leaves the device.
 
 ## Configuration
 
@@ -221,6 +227,7 @@ Copy `.env.example` to `.env`. Everything is optional:
 - `ANTHROPIC_API_KEY`: give the offline mirror a real model for agents and NL→SQL.
 - `ARCRX_DATA_DIR`: use a separate offline workspace (tests and recordings use a fresh one).
 - `ARCRX_CLINIC_CODE`: the code required to add a patient. On Informer, set it in the app's Environment tab.
-- `npm run models:fetch` re-downloads the MediaPipe models if `public/models/` is ever emptied.
+
+The MediaPipe runtime and models are committed under `public/`, so nothing is fetched at build or run time.
 
 ArcRx is a hackathon prototype and not a medical device.

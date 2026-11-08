@@ -10,3 +10,6 @@ dist/
 
 # TypeScript incremental build state
 *.tsbuildinfo
+
+# browser-test output (test/e2e.mjs)
+qa/

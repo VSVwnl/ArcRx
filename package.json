@@ -20,9 +20,7 @@
     "workspace:init": "informer-workspace init",
     "workspace:migrate": "informer-workspace migrate",
     "workspace:reset": "informer-workspace reset",
-    "models:fetch": "node dev/fetch-models.mjs",
     "test:e2e": "node test/e2e.mjs",
-    "preview:qa": "npm run build && vite preview --port 4173 --strictPort",
     "demo:offline": "npm run build && vite preview"
   },
   "dependencies": {
