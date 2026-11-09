@@ -6,6 +6,8 @@
 
 **Triangle AI Hackathon 2026 · Health & Wellness track · Entrinsik Challenge: Best Use of Informer Apps**
 
+> 🏆 **Winner of the Entrinsik Challenge: Best Use of Informer Apps** at the Triangle AI Hackathon 2026.
+
 ![ArcRx: Your webcam is the goniometer. Range-of-motion coaching for home rehab, with a clinician's check after every session.](docs/media/arcrx-cover.png)
 
 ArcRx turns a laptop webcam into a clinical range-of-motion instrument. A patient does their
